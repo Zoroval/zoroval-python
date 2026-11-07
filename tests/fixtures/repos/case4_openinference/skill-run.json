@@ -1,0 +1,30 @@
+{
+  "expect_cases": [
+    3,
+    4,
+    9
+  ],
+  "expect_explain_only": [],
+  "edits": [
+    {
+      "file": "requirements.txt",
+      "append": "zoroval\n"
+    },
+    {
+      "file": "app.py",
+      "replace": "OpenAIInstrumentor().instrument(tracer_provider=provider)\n",
+      "with": "OpenAIInstrumentor().instrument(tracer_provider=provider)\n\nimport zoroval  # noqa: E402\n\nzoroval.init()\n"
+    }
+  ],
+  "run": [
+    "python",
+    "app.py"
+  ],
+  "load_env": true,
+  "expect": {
+    "traces": 1,
+    "turns": 2,
+    "zoroval_generations": 0,
+    "scope_prefix": "openinference"
+  }
+}

@@ -1,0 +1,7 @@
+services:
+  chat-api:
+    build: services/chat-api
+  worker:
+    build: services/worker
+  web:
+    build: web

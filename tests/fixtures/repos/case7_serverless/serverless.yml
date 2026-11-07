@@ -1,0 +1,9 @@
+service: acme-chat
+provider:
+  name: aws
+  runtime: python3.12
+functions:
+  chat:
+    handler: handler.handler
+    events:
+      - httpApi: POST /chat

@@ -37,7 +37,7 @@ class LangfuseStandIn:
             def do_POST(self) -> None:  # noqa: N802
                 length = int(self.headers.get("Content-Length") or 0)
                 body = self.rfile.read(length)
-                if self.path.endswith("/otel/v1/traces"):
+                if self.path.endswith("/v1/traces"):
                     if (self.headers.get("Content-Encoding") or "") == "gzip":
                         body = gzip.decompress(body)
                     request = ExportTraceServiceRequest()

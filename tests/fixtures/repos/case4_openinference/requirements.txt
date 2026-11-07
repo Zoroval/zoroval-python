@@ -1,0 +1,3 @@
+openai>=1.60
+opentelemetry-sdk>=1.30
+openinference-instrumentation-openai>=0.1

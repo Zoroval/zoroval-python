@@ -477,12 +477,9 @@ def _classify(report: dict[str, Any], py: dict[str, str], js: dict[str, str], im
         cases.append(7)
     if len(report["services"]) > 1:
         explain.append(8)
-    if (uses_openai or uses_anthropic) and not any(c in cases for c in (2, 3, 4)) and 6 not in cases:
-        cases.insert(0, 1)
-    elif (uses_openai or uses_anthropic) and not any(c in cases for c in (2, 3, 4)):
-        cases.insert(0, 1)
+    if (uses_openai or uses_anthropic) and not any(c in cases for c in (2, 3, 4)) and "2b" not in explain:
+        cases.append(1)
     cases.append(9)
-    report["cases"] = sorted(set(cases), key=lambda c: (str(c)))
     report["cases"] = [c for c in [1, 2, 3, 4, 6, 7, 9] if c in cases]
     report["explain_only"] = [c for c in ["2b", 5, 8] if c in explain]
     if not (uses_openai or uses_anthropic) and 6 not in cases and 4 not in cases:

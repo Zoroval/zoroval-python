@@ -1,0 +1,10 @@
+{
+  "name": "acme-chat-web",
+  "private": true,
+  "dependencies": {
+    "@ai-sdk/openai": "^2.0.0",
+    "@vercel/otel": "^1.10.0",
+    "ai": "^5.0.0",
+    "next": "^15.0.0"
+  }
+}

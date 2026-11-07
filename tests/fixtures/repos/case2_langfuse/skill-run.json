@@ -1,0 +1,39 @@
+{
+  "expect_cases": [
+    2,
+    9
+  ],
+  "expect_explain_only": [],
+  "edits": [
+    {
+      "file": "requirements.txt",
+      "append": "zoroval\n"
+    },
+    {
+      "file": "app.py",
+      "replace": "from langfuse.openai import OpenAI\n",
+      "with": "from langfuse.openai import OpenAI\n\nimport zoroval\n"
+    },
+    {
+      "file": "app.py",
+      "replace": "langfuse = Langfuse()\n",
+      "with": "langfuse = Langfuse()\nzoroval.init()\n"
+    }
+  ],
+  "run": [
+    "python",
+    "app.py"
+  ],
+  "load_env": true,
+  "langfuse": true,
+  "expect": {
+    "traces": 1,
+    "turns": 2,
+    "zoroval_generations": 0,
+    "langfuse_generations": 2,
+    "never_sent": [
+      "sk-lf-placeholder-not-real",
+      "pk-lf-placeholder-not-real"
+    ]
+  }
+}

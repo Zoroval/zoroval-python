@@ -32,6 +32,22 @@ _originals: dict[tuple[type, str], Any] = {}
 
 # ---------------------------------------------------------------------------- shared request bits
 
+def _client_request_wrapped(resource: Any) -> bool:
+    """OpenInference's OpenAI instrumentor wraps `OpenAI.request` (below `create`). When it is
+    active, its span records the call, so we make none (no double spans in either backend)."""
+    client = getattr(resource, "_client", None)
+    if client is None:
+        return False
+    try:
+        import inspect
+        import types
+        func = inspect.getattr_static(type(client), "request")
+    except AttributeError:
+        return False
+    return type(func) is not types.FunctionType
+
+
+
 def _provider_name(resource: Any) -> str:
     client = getattr(resource, "_client", None)
     name = type(client).__name__ if client is not None else ""
@@ -359,7 +375,7 @@ class _ResponsesStreamState:
 def _wrap_sync(original: Any, start: Any, finish: Any, state_cls: Any, owner: type, method: str) -> Any:
     @functools.wraps(original)
     def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
-        if wrapped_over(owner, method, wrapper):
+        if wrapped_over(owner, method, wrapper) or _client_request_wrapped(self):
             return original(self, *args, **kwargs)
         gen = safe("openai.start", start, self, kwargs)
         if gen is None or not gen.active:
@@ -392,7 +408,7 @@ def _wrap_sync(original: Any, start: Any, finish: Any, state_cls: Any, owner: ty
 def _wrap_async(original: Any, start: Any, finish: Any, state_cls: Any, owner: type, method: str) -> Any:
     @functools.wraps(original)
     async def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
-        if wrapped_over(owner, method, wrapper):
+        if wrapped_over(owner, method, wrapper) or _client_request_wrapped(self):
             return await original(self, *args, **kwargs)
         gen = safe("openai.start", start, self, kwargs)
         if gen is None or not gen.active:

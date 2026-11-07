@@ -1,0 +1,48 @@
+{
+  "expect_cases": [
+    3,
+    9
+  ],
+  "expect_explain_only": [],
+  "edits": [
+    {
+      "file": "requirements.txt",
+      "append": "zoroval\n"
+    },
+    {
+      "file": "tracing.py",
+      "replace": "trace.set_tracer_provider(provider)\n",
+      "with": "trace.set_tracer_provider(provider)\n\nimport zoroval  # noqa: E402\n\nzoroval.init()\n"
+    },
+    {
+      "file": "app.py",
+      "replace": "from openai import OpenAI\n",
+      "with": "from openai import OpenAI\n\nimport zoroval\n"
+    },
+    {
+      "file": "app.py",
+      "replace": "    with tracer.start_as_current_span(\"handle_message\"):\n",
+      "with": "    with zoroval.conversation(conversation_id), tracer.start_as_current_span(\"handle_message\"):\n"
+    }
+  ],
+  "run": [
+    "python",
+    "app.py"
+  ],
+  "load_env": true,
+  "app_collector": true,
+  "expect": {
+    "traces": 1,
+    "turns": 2,
+    "zoroval_generations": 2,
+    "not_at_zoroval": [
+      "handle_message",
+      "load_profile"
+    ],
+    "at_app_collector": [
+      "handle_message",
+      "load_profile",
+      "chat gpt-test"
+    ]
+  }
+}

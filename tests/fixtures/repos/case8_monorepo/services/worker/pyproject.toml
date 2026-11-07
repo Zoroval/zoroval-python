@@ -1,0 +1,4 @@
+[project]
+name = "worker"
+version = "0.1.0"
+dependencies = ["anthropic>=0.40", "celery>=5"]
