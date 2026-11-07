@@ -41,3 +41,4 @@ packages = ["src/zoroval"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+filterwarnings = ["ignore:This process .* is multi-threaded:DeprecationWarning"]

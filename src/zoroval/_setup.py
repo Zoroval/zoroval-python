@@ -83,16 +83,19 @@ def _attach_logs(cfg: _config.Config, transport: Transport) -> Any:
     try:
         from opentelemetry._logs import get_logger_provider
         from opentelemetry.sdk._logs import LoggerProvider
-        from opentelemetry.sdk._logs.export import BatchLogRecordProcessor, LogExporter
+        from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
     except ImportError:
         return None
+    try:  # newer SDKs renamed the exporter base class
+        from opentelemetry.sdk._logs.export import LogRecordExporter as LogExporter
+        from opentelemetry.sdk._logs.export import LogRecordExportResult as LogExportResult
+    except ImportError:
+        from opentelemetry.sdk._logs.export import LogExporter, LogExportResult  # type: ignore[no-redef]
     provider = get_logger_provider()
     if not isinstance(provider, LoggerProvider):
         return None
 
     import time
-
-    from opentelemetry.sdk._logs.export import LogExportResult
 
     class _ZorovalLogExporter(LogExporter):  # type: ignore[misc]
         def export(self, batch: Sequence[Any]) -> Any:

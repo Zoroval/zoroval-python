@@ -73,7 +73,8 @@ def start_sdk(gateway: FakeGateway) -> Callable[..., Any]:
         key = kwargs.pop("api_key", None) or gateway.issue_key()
         kwargs.setdefault("flush_interval", 0.05)
         kwargs.setdefault("service_name", "test-app")
-        assert zoroval.init(api_key=key, ingest_url=gateway.url, **kwargs)
+        kwargs.setdefault("ingest_url", gateway.url)
+        assert zoroval.init(api_key=key, **kwargs)
         return key
 
     return start

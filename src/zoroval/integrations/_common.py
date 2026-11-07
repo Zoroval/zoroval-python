@@ -63,13 +63,25 @@ def foreign_llm_span_active() -> bool:
     return False
 
 
+def is_ours(func: Any) -> bool:
+    """wrapt proxies forward attribute reads, so check the real type before the marker."""
+    return type(func) is types.FunctionType and bool(getattr(func, MARK, False))
+
+
 def foreign_wrapper(func: Any, package: str) -> bool:
     """Is `func` already wrapped by someone else? wrapt proxies fake __class__, so test the type."""
-    if getattr(func, MARK, False):
+    if is_ours(func):
         return False
     if type(func) is not types.FunctionType:
         return True
     return not (getattr(func, "__module__", "") or "").startswith(package + ".")
+
+
+def wrapped_over(owner: type, method: str, ours: Any) -> bool:
+    """True when another instrumentation wrapped the method after us (install order: Zoroval first).
+    That wrapper records this call, so ours must not record it again."""
+    current = owner.__dict__.get(method)
+    return current is not None and current is not ours and not is_ours(current)
 
 
 class Generation:

@@ -14,7 +14,7 @@ from typing import Any, Optional
 from .. import _json
 from .._util import internal_error
 from ._common import (MARK, AsyncStream, Generation, SyncStream, foreign_wrapper, get, given, media_part,
-                      safe, text_part)
+                      is_ours, safe, text_part, wrapped_over)
 
 REQUEST_PARAMS = {
     "temperature": "gen_ai.request.temperature",
@@ -190,10 +190,12 @@ class _StreamState:
 
 # ---------------------------------------------------------------------------- wrappers
 
-def _wrap_create(original: Any, is_async: bool) -> Any:
+def _wrap_create(original: Any, is_async: bool, owner: type, method: str) -> Any:
     if is_async:
         @functools.wraps(original)
         async def async_wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+            if wrapped_over(owner, method, async_wrapper):
+                return await original(self, *args, **kwargs)
             gen = safe("anthropic.start", _start, self, kwargs)
             if gen is None or not gen.active:
                 return await original(self, *args, **kwargs)
@@ -222,6 +224,8 @@ def _wrap_create(original: Any, is_async: bool) -> Any:
 
     @functools.wraps(original)
     def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+        if wrapped_over(owner, method, wrapper):
+            return original(self, *args, **kwargs)
         gen = safe("anthropic.start", _start, self, kwargs)
         if gen is None or not gen.active:
             return original(self, *args, **kwargs)
@@ -313,10 +317,12 @@ class _StreamManager:
                 safe("anthropic.stream_end", self._proxy._end, exc[1] if isinstance(exc[1], Exception) else None)
 
 
-def _wrap_stream(original: Any) -> Any:
+def _wrap_stream(original: Any, owner: type) -> Any:
     @functools.wraps(original)
     def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
         manager = original(self, *args, **kwargs)
+        if wrapped_over(owner, "stream", wrapper):
+            return manager
         try:
             return _StreamManager(manager, self, kwargs)
         except Exception as error:  # noqa: BLE001
@@ -337,16 +343,16 @@ def instrument() -> bool:
             current = cls.__dict__.get(method)
             if current is None:
                 continue
-            if getattr(current, MARK, False):
+            if is_ours(current):
                 wrapped_any = True
                 continue
             if foreign_wrapper(current, "anthropic"):
                 continue
             _originals[(cls, method)] = current
             if method == "stream":
-                setattr(cls, method, _wrap_stream(current))
+                setattr(cls, method, _wrap_stream(current, cls))
             else:
-                setattr(cls, method, _wrap_create(current, is_async))
+                setattr(cls, method, _wrap_create(current, is_async, cls, method))
             wrapped_any = True
     return wrapped_any
 

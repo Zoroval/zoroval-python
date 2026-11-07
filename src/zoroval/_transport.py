@@ -104,6 +104,13 @@ def _string_kv(key: str, value: Any) -> KeyValue:
     return kv
 
 
+def _default_opener() -> Callable[..., Any]:
+    """Proxies from HTTP(S)_PROXY and NO_PROXY only. The default urllib opener also asks macOS
+    for system proxies, which crashes a forked child (gunicorn and uvicorn workers on a Mac)."""
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler(urllib.request.getproxies_environment()))
+    return opener.open
+
+
 @dataclass
 class SendResult:
     ok: bool
@@ -119,7 +126,7 @@ class Transport:
     def __init__(self, cfg: Config, *, opener: Optional[Callable[..., Any]] = None) -> None:
         self.cfg = cfg
         self._zstd = zstandard.ZstdCompressor(level=3, write_content_size=True)
-        self._opener = opener or urllib.request.urlopen
+        self._opener = opener or _default_opener()
         self._dropped_unreported = 0
         self._lock = threading.Lock()
         self.fatal_reason: Optional[str] = None

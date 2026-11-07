@@ -232,9 +232,13 @@ class _Handler(BaseHTTPRequestHandler):
                              else {**item, "content": [], "status": "in_progress"}))
             if item["type"] == "message":
                 text = item["content"][0]["text"]
+                events.append(ev("response.content_part.added", item_id=item["id"], output_index=index,
+                                 content_index=0, part={"type": "output_text", "text": "", "annotations": []}))
                 for word in text.split(" "):
                     events.append(ev("response.output_text.delta", item_id=item["id"], output_index=index,
                                      content_index=0, delta=word + " ", logprobs=[]))
+                events.append(ev("response.content_part.done", item_id=item["id"], output_index=index,
+                                 content_index=0, part=item["content"][0]))
             else:
                 events.append(ev("response.function_call_arguments.delta", item_id=item["id"],
                                  output_index=index, delta=item["arguments"]))

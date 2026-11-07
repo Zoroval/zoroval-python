@@ -345,6 +345,9 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(error[0], _status_body(error[1], 16 if error[0] == 401 else 7, content_type),
                               "application/x-protobuf")
         with st.lock:
+            st.requests.append({"path": path, "headers": dict(self.headers.items()), "wire_bytes": len(body),
+                                "raw_bytes": None, "encoding": self.headers.get("Content-Encoding")})
+            request_record = st.requests[-1]
             if st.fail_next:
                 code = st.fail_next.pop(0)
                 reason = {429: "rate_limited", 503: "backlog"}.get(code, "server_error")
@@ -373,8 +376,7 @@ class _Handler(BaseHTTPRequestHandler):
         batch_id = self.headers.get("X-Zoroval-Batch-Id") or ""
         dropped = int(self.headers.get("X-Zoroval-Dropped-Spans") or 0)
         with st.lock:
-            st.requests.append({"path": path, "headers": dict(self.headers.items()), "wire_bytes": len(body),
-                                "raw_bytes": len(raw), "encoding": encoding})
+            request_record["raw_bytes"] = len(raw)
             duplicate = bool(batch_id) and batch_id in st.batches
         if path == "/v1/logs":
             return self._logs(raw, content_type, duplicate)

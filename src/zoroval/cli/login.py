@@ -20,6 +20,9 @@ from .. import _config
 from .._transport import USER_AGENT
 from . import envfile
 
+from .._transport import _default_opener
+
+_OPEN = _default_opener()
 SLOW_DOWN_STEP = 5.0     # RFC 8628: add 5 seconds after slow_down
 MIN_INTERVAL = 0.05
 
@@ -28,7 +31,7 @@ def _post(url: str, payload: dict, timeout: float = 15.0) -> tuple[int, dict]:
     request = urllib.request.Request(url, data=json.dumps(payload).encode(), method="POST", headers={
         "Content-Type": "application/json", "Accept": "application/json", "User-Agent": USER_AGENT})
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with _OPEN(request, timeout=timeout) as response:
             return response.status, json.loads(response.read() or b"{}")
     except urllib.error.HTTPError as error:
         try:

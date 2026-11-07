@@ -13,7 +13,7 @@ from typing import Any, Optional
 from .. import _context, _json
 from .._util import internal_error
 from ._common import (MARK, AsyncStream, Generation, SyncStream, foreign_wrapper, get, given, media_part,
-                      safe, text_part)
+                      is_ours, safe, text_part, wrapped_over)
 
 REQUEST_PARAMS = {
     "temperature": "gen_ai.request.temperature",
@@ -356,9 +356,11 @@ class _ResponsesStreamState:
 
 # ---------------------------------------------------------------------------- wrappers
 
-def _wrap_sync(original: Any, start: Any, finish: Any, state_cls: Any) -> Any:
+def _wrap_sync(original: Any, start: Any, finish: Any, state_cls: Any, owner: type, method: str) -> Any:
     @functools.wraps(original)
     def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+        if wrapped_over(owner, method, wrapper):
+            return original(self, *args, **kwargs)
         gen = safe("openai.start", start, self, kwargs)
         if gen is None or not gen.active:
             return original(self, *args, **kwargs)
@@ -387,9 +389,11 @@ def _wrap_sync(original: Any, start: Any, finish: Any, state_cls: Any) -> Any:
     return wrapper
 
 
-def _wrap_async(original: Any, start: Any, finish: Any, state_cls: Any) -> Any:
+def _wrap_async(original: Any, start: Any, finish: Any, state_cls: Any, owner: type, method: str) -> Any:
     @functools.wraps(original)
     async def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+        if wrapped_over(owner, method, wrapper):
+            return await original(self, *args, **kwargs)
         gen = safe("openai.start", start, self, kwargs)
         if gen is None or not gen.active:
             return await original(self, *args, **kwargs)
@@ -445,14 +449,14 @@ def instrument() -> bool:
         current = cls.__dict__.get(method)
         if current is None:
             continue
-        if getattr(current, MARK, False):
+        if is_ours(current):
             wrapped_any = True
             continue
         if foreign_wrapper(current, "openai"):
             continue  # Langfuse, contrib or OpenInference owns this call; we read their spans
         _originals[(cls, method)] = current
         factory = _wrap_async if is_async else _wrap_sync
-        setattr(cls, method, factory(current, start, finish, state_cls))
+        setattr(cls, method, factory(current, start, finish, state_cls, cls, method))
         wrapped_any = True
     return wrapped_any
 
