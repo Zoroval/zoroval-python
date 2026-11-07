@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "zoroval"
+version = "0.1.0"
+description = "Zoroval SDK: trace your LLM app as whole conversations. OpenAI and Anthropic wrappers, safe OTLP transport, setup CLI."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "Zoroval" }]
+keywords = ["llm", "observability", "tracing", "opentelemetry", "openai", "anthropic", "evals"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Libraries",
+  "Topic :: System :: Monitoring",
+]
+dependencies = [
+  "opentelemetry-api>=1.30",
+  "opentelemetry-sdk>=1.30",
+  "opentelemetry-exporter-otlp-proto-common>=1.30",
+  "zstandard>=0.22",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "openai>=1.60", "anthropic>=0.40", "langfuse>=3"]
+
+[project.scripts]
+zoroval = "zoroval.cli.main:main"
+
+[project.urls]
+Homepage = "https://zoroval.com"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/zoroval"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
