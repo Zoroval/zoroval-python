@@ -198,7 +198,7 @@ def _unacked_bytes(sock: Any) -> Optional[int]:
             return int(struct.unpack("i", raw)[0])
         if sys.platform == "darwin":
             return int(sock.getsockopt(socket.SOL_SOCKET, _SO_NWRITE))
-    except (OSError, ValueError, ImportError):
+    except Exception:  # noqa: BLE001 - unknown means "do not split"; never break a send
         return None
     return None
 
