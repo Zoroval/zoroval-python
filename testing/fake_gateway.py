@@ -15,6 +15,8 @@ import gzip
 import hashlib
 import json
 import secrets
+import select
+import socket
 import string
 import threading
 import time
@@ -147,6 +149,9 @@ class GatewayState:
     auto_approve_after: Optional[int] = None                 # approve after N token polls
     deny_after: Optional[int] = None
     delay_s: float = 0.0
+    uplink_bytes_per_s: float = 0.0                          # slow client uplink: body takes len/rate to arrive
+    abandoned: int = 0                                       # bodies the client gave up on mid-upload
+    idle_timeout_s: Optional[float] = None                   # close kept-alive connections idle this long
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
@@ -283,6 +288,10 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, *args: Any) -> None:  # quiet
         pass
 
+    def setup(self) -> None:
+        self.timeout = self.gateway_state.idle_timeout_s
+        super().setup()
+
     # -------------------------------------------------------------- plumbing
 
     def _send(self, status: int, body: bytes = b"", content_type: str = "application/json",
@@ -334,10 +343,26 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(200, b"<html>fake connect page</html>", "text/html")
         self._json(404, {"message": "not_found"})
 
+    def _client_gone(self) -> bool:
+        try:
+            readable, _, _ = select.select([self.connection], [], [], 0)
+            return bool(readable) and self.connection.recv(1, socket.MSG_PEEK) == b""
+        except OSError:
+            return True
+
     def _otlp(self, path: str) -> None:
         st = self.gateway_state
         body = self._read()
         content_type = self.headers.get("Content-Type", "")
+        if st.uplink_bytes_per_s:
+            # The body trickles in over a slow uplink. A client that timed out and hung up before
+            # it arrived gets nothing stored, like the real gateway (client_disconnected).
+            time.sleep(len(body) / st.uplink_bytes_per_s)
+            if self._client_gone():
+                with st.lock:
+                    st.abandoned += 1
+                self.close_connection = True
+                return
         if st.delay_s:
             time.sleep(st.delay_s)
         record, error = self._auth()
@@ -346,11 +371,12 @@ class _Handler(BaseHTTPRequestHandler):
                               "application/x-protobuf")
         with st.lock:
             st.requests.append({"path": path, "headers": dict(self.headers.items()), "wire_bytes": len(body),
-                                "raw_bytes": None, "encoding": self.headers.get("Content-Encoding")})
+                                "raw_bytes": None, "encoding": self.headers.get("Content-Encoding"),
+                                "client_port": self.client_address[1], "at": time.monotonic()})
             request_record = st.requests[-1]
             if st.fail_next:
                 code = st.fail_next.pop(0)
-                reason = {429: "rate_limited", 503: "backlog"}.get(code, "server_error")
+                reason = {429: "rate_limited", 503: "backlog", 408: "timeout"}.get(code, "server_error")
                 return self._send(code, _status_body(reason, 14, content_type), "application/x-protobuf",
                                   {"Retry-After": st.retry_after})
         if content_type not in ("application/x-protobuf", "application/json"):

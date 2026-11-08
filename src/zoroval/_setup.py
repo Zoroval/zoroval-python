@@ -306,6 +306,8 @@ def status() -> dict[str, Any]:
         out["instrumented"] = dict(state.instrumented)
         out["last_error"] = state.transport.last_error
         out["key_refused"] = state.transport.fatal_reason
+        out["export_state"] = state.transport.export_state()
+        out["export_resumes_in_s"] = round(state.transport.hold_remaining(), 1)
         out["sample_rate"] = state.cfg.sample_rate
         out["capture_content"] = state.cfg.capture_content
     return out
