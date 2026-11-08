@@ -147,6 +147,9 @@ class GatewayState:
     auto_approve_after: Optional[int] = None                 # approve after N token polls
     deny_after: Optional[int] = None
     delay_s: float = 0.0
+    uplink_bytes_per_s: float = 0.0                          # read request bodies at most this fast
+    abandoned: int = 0                                       # bodies cut off before Content-Length (not stored)
+    idle_timeout_s: Optional[float] = None                   # close kept-alive connections idle this long
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
@@ -283,6 +286,10 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, *args: Any) -> None:  # quiet
         pass
 
+    def setup(self) -> None:
+        self.timeout = self.gateway_state.idle_timeout_s
+        super().setup()
+
     # -------------------------------------------------------------- plumbing
 
     def _send(self, status: int, body: bytes = b"", content_type: str = "application/json",
@@ -334,9 +341,35 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(200, b"<html>fake connect page</html>", "text/html")
         self._json(404, {"message": "not_found"})
 
+    def _read_body(self) -> Optional[bytes]:
+        """The whole body, read at most `uplink_bytes_per_s` fast, or None when the client hung up
+        or reset before Content-Length bytes arrived. Like the real gateway, nothing is stored."""
+        st = self.gateway_state
+        length = int(self.headers.get("Content-Length") or 0)
+        chunks, got = [], 0
+        try:
+            while got < length:
+                chunk = self.rfile.read1(min(65536, length - got))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                got += len(chunk)
+                if st.uplink_bytes_per_s:
+                    time.sleep(len(chunk) / st.uplink_bytes_per_s)
+        except OSError:
+            pass
+        if got < length:
+            with st.lock:
+                st.abandoned += 1
+            self.close_connection = True
+            return None
+        return b"".join(chunks)
+
     def _otlp(self, path: str) -> None:
         st = self.gateway_state
-        body = self._read()
+        body = self._read_body()
+        if body is None:
+            return
         content_type = self.headers.get("Content-Type", "")
         if st.delay_s:
             time.sleep(st.delay_s)
@@ -346,11 +379,12 @@ class _Handler(BaseHTTPRequestHandler):
                               "application/x-protobuf")
         with st.lock:
             st.requests.append({"path": path, "headers": dict(self.headers.items()), "wire_bytes": len(body),
-                                "raw_bytes": None, "encoding": self.headers.get("Content-Encoding")})
+                                "raw_bytes": None, "encoding": self.headers.get("Content-Encoding"),
+                                "client_port": self.client_address[1], "at": time.monotonic()})
             request_record = st.requests[-1]
             if st.fail_next:
                 code = st.fail_next.pop(0)
-                reason = {429: "rate_limited", 503: "backlog"}.get(code, "server_error")
+                reason = {429: "rate_limited", 503: "backlog", 408: "timeout"}.get(code, "server_error")
                 return self._send(code, _status_body(reason, 14, content_type), "application/x-protobuf",
                                   {"Retry-After": st.retry_after})
         if content_type not in ("application/x-protobuf", "application/json"):

@@ -43,6 +43,8 @@ class Counters:
         "spans_failed",         # in batches that failed after retries
         "batches_sent",
         "batches_failed",
+        "batches_split",        # halved after a 413 or a timeout on a slow uplink
+        "batches_requeued",     # put back on the queue after retries ran out while the gateway was down
         "bytes_sent",           # compressed bytes on the wire
         "internal_errors",      # SDK bugs caught before they reached the app
         "redact_errors",        # redact hook raised; content was dropped

@@ -75,3 +75,31 @@ def test_fork_without_flush_does_not_crash_child(start_sdk, gateway):
     assert os.WEXITSTATUS(status) == 0
     flush()
     assert [s["name"] for s in gateway.state.spans] == ["child-no-flush"]
+
+
+def test_child_never_reuses_the_parents_kept_alive_connection(start_sdk, gateway):
+    start_sdk()
+    _span("parent-1")
+    flush()   # the parent now holds an open kept-alive connection
+    parent_port = gateway.state.requests[0]["client_port"]
+    pid = os.fork()
+    if pid == 0:  # child
+        code = 1
+        try:
+            _span("child")
+            code = 0 if zoroval.flush(5.0) else 3
+        finally:
+            os._exit(code)
+    _, status = os.waitpid(pid, 0)
+    assert os.WEXITSTATUS(status) == 0
+    _span("parent-2")
+    flush()
+    port_of = {}
+    for request in gateway.state.requests:
+        batch = request["headers"].get("X-Zoroval-Batch-Id")
+        for span in gateway.state.spans:
+            if span["batch_id"] == batch:
+                port_of[span["name"]] = request["client_port"]
+    assert set(port_of) == {"parent-1", "child", "parent-2"}
+    assert port_of["child"] != parent_port   # its own connection, not the parent's socket
+    assert port_of["parent-2"] == parent_port   # the parent's connection survived the child

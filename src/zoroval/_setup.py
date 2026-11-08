@@ -268,6 +268,8 @@ def shutdown(timeout: Optional[float] = None) -> dict[str, Any]:
     try:
         state.processor.shutdown(timeout)
         if state.log_processor is not None:
+            # Logs get one try each: no waiting out a pause, a backoff or retry sleeps at exit.
+            state.transport.abort.set()
             try:
                 state.log_processor.shutdown()
             except Exception as error:  # noqa: BLE001
@@ -306,6 +308,8 @@ def status() -> dict[str, Any]:
         out["instrumented"] = dict(state.instrumented)
         out["last_error"] = state.transport.last_error
         out["key_refused"] = state.transport.fatal_reason
+        out["export_state"] = state.transport.export_state()
+        out["export_resumes_in_s"] = round(state.transport.hold_remaining(), 1)
         out["sample_rate"] = state.cfg.sample_rate
         out["capture_content"] = state.cfg.capture_content
     return out

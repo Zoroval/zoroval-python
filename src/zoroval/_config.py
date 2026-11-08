@@ -65,12 +65,14 @@ class Config:
     # Transport and queue. Defaults follow the PoC traps (REPORT.md sections 4.3 to 4.5).
     max_queue_bytes: int = 64 * MIB
     max_queue_spans: int = 20_000
-    max_batch_bytes: int = 16 * MIB         # raw protobuf bytes per batch before zstd
+    # Raw protobuf bytes per batch before zstd. 4 MiB is the gateway's per-span cap, so the largest
+    # span still goes alone, and about 1 MiB after zstd fits the slow-uplink timeout (_transport.py).
+    max_batch_bytes: int = 4 * MIB
     max_batch_spans: int = 4096
     max_request_bytes: int = 16 * MIB       # gateway wire limit (contracts 5.1)
     flush_interval: float = 1.0
     shutdown_timeout: float = 5.0
-    request_timeout: float = 10.0
+    request_timeout: float = 10.0            # floor; grows with the body size (_transport.request_timeout_for)
     max_attempts: int = 5
     # Content caps.
     max_content_bytes: int = 4 * MIB        # per content attribute (messages, inputs, outputs)
