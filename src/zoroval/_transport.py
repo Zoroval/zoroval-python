@@ -8,9 +8,11 @@
   or a fork. Standard library only; proxies from HTTP(S)_PROXY and NO_PROXY.
 - The request timeout grows with the body size, between `request_timeout` and a ceiling below the
   gateway's 60 s body-read deadline.
-- Retries 429 and 503 after `Retry-After`, and 5xx, 408, timeouts and connection errors with
-  backoff, always inside the caller's deadline. A `Retry-After` that passes the deadline pauses
-  every sender on this transport until then. 401 and 403 stop all export for the process.
+- Retries 429 and 503 after `Retry-After` (never sooner than the backoff), and 5xx, 408, timeouts
+  and connection errors with backoff, always inside the caller's deadline. Only a timeout while
+  the body is uploading (or a 408) is a reason to split a batch. A `Retry-After` that passes the
+  deadline pauses every sender on this transport until then. 401 and 403 stop all export for the
+  process.
 """
 
 from __future__ import annotations
@@ -19,10 +21,14 @@ import base64
 import email.utils
 import http.client
 import json
+import math
 import os
 import random
 import select
+import socket
 import ssl
+import struct
+import sys
 import threading
 import time
 import urllib.error
@@ -137,6 +143,15 @@ class ConnectTimeout(ConnectionError):
     """The TCP or TLS handshake timed out (the body was never sent)."""
 
 
+class UploadTimeout(TimeoutError):
+    """The body did not finish sending in time: a slow uplink. Splitting the batch helps."""
+
+
+class ResponseTimeout(TimeoutError):
+    """The whole body was sent but the answer was late. The gateway may have stored the batch, so
+    resend it under the same batch id (the gateway skips a batch id it has seen) and never split."""
+
+
 def _parse_retry_after(value: Optional[str]) -> Optional[float]:
     """Seconds from a Retry-After header (delta seconds or HTTP date), clamped to [0, MAX_PAUSE_S]."""
     if not value:
@@ -151,16 +166,52 @@ def _parse_retry_after(value: Optional[str]) -> Optional[float]:
         if when is None:
             return None
         seconds = when.timestamp() - time.time()
+    if not math.isfinite(seconds):   # "nan" and "inf" parse as floats
+        return None
     return min(max(seconds, 0.0), MAX_PAUSE_S)
 
 
 def _connection_dropped(sock: Any) -> bool:
     """An idle keep-alive socket that is readable has been closed by the server (or is broken)."""
     try:
+        if hasattr(select, "poll"):   # select.select fails for descriptors >= 1024
+            poller = select.poll()
+            poller.register(sock, select.POLLIN | select.POLLPRI)
+            return bool(poller.poll(0))
         readable, _, _ = select.select([sock], [], [], 0)
         return bool(readable)
     except (OSError, ValueError):
         return True
+
+
+_SO_NWRITE = 0x1024   # macOS: bytes in the send buffer not yet acknowledged
+
+
+def _unacked_bytes(sock: Any) -> Optional[int]:
+    """Bytes the kernel still holds for this socket (unsent or unacknowledged), or None if unknown.
+    More than zero means the peer has not received the whole body."""
+    try:
+        if sys.platform.startswith("linux"):
+            import fcntl
+            import termios
+            raw = fcntl.ioctl(sock.fileno(), termios.TIOCOUTQ, struct.pack("i", 0))   # SIOCOUTQ
+            return int(struct.unpack("i", raw)[0])
+        if sys.platform == "darwin":
+            return int(sock.getsockopt(socket.SOL_SOCKET, _SO_NWRITE))
+    except (OSError, ValueError, ImportError):
+        return None
+    return None
+
+
+def _reset(conn: Any) -> None:
+    """Close with a TCP reset, dropping unsent bytes, so the gateway never sees a complete body
+    for a request we gave up on (it stores nothing; the halves are sent under new batch ids)."""
+    try:
+        if conn.sock is not None:
+            conn.sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+    except (OSError, ValueError):
+        pass
+    conn.close()
 
 
 @dataclass
@@ -201,6 +252,7 @@ class Transport:
         self._conn: Optional[http.client.HTTPConnection] = None
         self._conn_key: Optional[tuple] = None
         self._conn_pid = os.getpid()
+        self._closing = False
         self.connections_opened = 0
 
     def after_fork(self) -> None:
@@ -209,12 +261,18 @@ class Transport:
         self._init_runtime()
 
     def close(self) -> None:
-        conn, self._conn = self._conn, None
-        if conn is not None and self._conn_pid == os.getpid():
-            try:
+        """Close the kept-alive connection. If another sender is using it, it closes on release."""
+        self._closing = True
+        if not self._conn_lock.acquire(timeout=0.1):
+            return
+        try:
+            conn, self._conn = self._conn, None
+            if conn is not None and self._conn_pid == os.getpid():
                 conn.close()
-            except Exception:  # noqa: BLE001
-                pass
+        except Exception:  # noqa: BLE001
+            pass
+        finally:
+            self._conn_lock.release()
 
     # ------------------------------------------------------------------ drop accounting
 
@@ -300,13 +358,15 @@ class Transport:
             log_once(f"paused:{reason}", "zoroval: the gateway asked to pause export for %.0fs (%s). Spans "
                      "stay queued (oldest dropped when full) and are sent after the pause.", seconds, reason)
 
-    def back_off(self, reason: str) -> float:
-        """After a batch failed all its retries: wait longer each time until a send succeeds."""
+    def back_off(self, reason: str, *, at_least: float = 0.0, kind: str = "backing_off") -> float:
+        """After a batch failed all its retries, or was paused: wait longer each time until a send
+        succeeds (0.5 s doubling to MAX_BACKOFF_S), and never less than `at_least` (a Retry-After)."""
         with self._lock:
             self._failures += 1
             failures = self._failures
         delay = min(0.5 * (2 ** (failures - 1)), MAX_BACKOFF_S) * (0.8 + 0.4 * random.random())
-        self.hold(delay, "backing_off", reason)
+        delay = max(delay, at_least)
+        self.hold(delay, kind, reason)
         return delay
 
     def hold_remaining(self) -> float:
@@ -388,13 +448,18 @@ class Transport:
 
     def _release(self, conn: http.client.HTTPConnection, owned: bool) -> None:
         if owned:
+            if self._closing:
+                conn.close()
+                self._conn = None
             self._conn_lock.release()
         else:
             conn.close()
 
-    def _post_once(self, url: str, body: bytes, headers: dict[str, str],
-                   timeout: float) -> tuple[int, Any, bytes]:
-        """One POST on the persistent connection. Raises on network errors and timeouts."""
+    def _post_once(self, url: str, body: bytes, headers: dict[str, str], timeout: float,
+                   deadline: float) -> tuple[int, Any, bytes]:
+        """One POST on the persistent connection. `timeout` covers connect plus upload; the wait for
+        the answer gets what is left, but at least `request_timeout` while `deadline` allows.
+        Raises on network errors, `UploadTimeout` and `ResponseTimeout`."""
         key, target = self._route(url)
         conn, owned = self._acquire(key)
         try:
@@ -413,14 +478,27 @@ class Transport:
                     conn.sock.settimeout(timeout)
                     request_headers = dict(headers)
                     request_headers.update(getattr(conn, "_zoroval_proxy_headers", {}))
-                    conn.request("POST", target, body=body, headers=request_headers)
-                    left = timeout - (time.monotonic() - started)
-                    if left <= 0:
-                        raise TimeoutError("request timeout")
-                    if conn.sock is not None:
-                        conn.sock.settimeout(left)
-                    response = conn.getresponse()
-                    data = response.read()
+                    try:
+                        conn.request("POST", target, body=body, headers=request_headers)
+                    except TimeoutError:
+                        _reset(conn)
+                        raise UploadTimeout("upload timeout") from None
+                    now = time.monotonic()
+                    floor = min(self.cfg.request_timeout, deadline - now)
+                    left = max(timeout - (now - started), floor, 0.05)
+                    try:
+                        if conn.sock is not None:
+                            conn.sock.settimeout(left)
+                        response = conn.getresponse()
+                        data = response.read()
+                    except TimeoutError:
+                        # `sendall` returns once the body is in kernel buffers, which can hold
+                        # megabytes. Bytes still unacknowledged mean the upload is what is slow.
+                        unacked = _unacked_bytes(conn.sock) if conn.sock is not None else None
+                        if unacked:
+                            _reset(conn)
+                            raise UploadTimeout("upload timeout") from None
+                        raise ResponseTimeout("response timeout") from None
                     if response.will_close:
                         conn.close()
                     return response.status, response.headers, data
@@ -444,8 +522,9 @@ class Transport:
              split_on_timeout: bool = False) -> SendResult:
         """POST one compressed request with retries inside `deadline` (time.monotonic()).
 
-        With `split_on_timeout`, a timeout or 408 returns at once (`timeout=True`) so the caller can
-        send the batch in two halves; otherwise it is retried like a connection error.
+        With `split_on_timeout`, an upload timeout or 408 returns at once (`timeout=True`) so the
+        caller can send the batch in two halves; otherwise it is retried like a connection error.
+        A late answer after the whole body was sent is retried under the same batch id, never split.
         """
         if self.fatal_reason:
             return SendResult(False, reason=self.fatal_reason, fatal=True)
@@ -476,14 +555,18 @@ class Transport:
             if dropped:
                 headers["X-Zoroval-Dropped-Spans"] = str(dropped)
             status, reason, retry_after, response_body, timed_out = 0, "", None, b"", False
+            # An attempt cut short by the deadline proves nothing about the uplink: no split.
+            cut_short = remaining < per_request
             try:
                 status, response_headers, response_body = self._post_once(
-                    url, body, headers, min(per_request, remaining))
+                    url, body, headers, min(per_request, remaining), deadline)
                 if not 200 <= status < 300:
                     reason = parse_status_message(response_body, response_headers.get("Content-Type", ""))
                     retry_after = response_headers.get("Retry-After")
-            except TimeoutError:
-                status, reason, timed_out = 0, "timeout", True
+            except UploadTimeout:
+                status, reason, timed_out = 0, "upload_timeout", not cut_short
+            except TimeoutError:   # ResponseTimeout: resend under the same batch id
+                status, reason = 0, "response_timeout"
             except Exception as error:  # noqa: BLE001 - connection refused, DNS, TLS, reset
                 status, reason = 0, f"connection:{type(error).__name__}"
 
@@ -513,12 +596,13 @@ class Transport:
                 if wait is not None:
                     # The gateway said when: every sender waits, and a wait past this batch's
                     # deadline (or its last attempt) pauses export instead of failing the batch.
+                    # Never sooner than the normal backoff, so `Retry-After: 0` cannot cause a loop;
+                    # pauses in a row grow like backoff until a send succeeds.
                     if attempt >= self.cfg.max_attempts or time.monotonic() + wait >= deadline:
-                        # At least a second, so a gateway answering `Retry-After: 0` cannot cause a loop.
-                        self.hold(max(wait, MIN_PAUSE_S), "paused", reason or str(status))
+                        self.back_off(reason or str(status), at_least=max(wait, MIN_PAUSE_S), kind="paused")
                         return SendResult(False, status=status, reason=reason or "paused",
                                           retryable=True, paused=True)
-                    self.hold(wait, "paused", reason or str(status))
+                    self.hold(max(wait, self._backoff(attempt, None)), "paused", reason or str(status))
                     continue
             if attempt >= self.cfg.max_attempts:
                 return SendResult(False, status=status, reason=reason or "retries_exhausted", retryable=True)

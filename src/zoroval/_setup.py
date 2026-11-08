@@ -268,6 +268,8 @@ def shutdown(timeout: Optional[float] = None) -> dict[str, Any]:
     try:
         state.processor.shutdown(timeout)
         if state.log_processor is not None:
+            # Logs get one try each: no waiting out a pause, a backoff or retry sleeps at exit.
+            state.transport.abort.set()
             try:
                 state.log_processor.shutdown()
             except Exception as error:  # noqa: BLE001

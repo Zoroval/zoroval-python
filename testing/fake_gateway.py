@@ -15,8 +15,6 @@ import gzip
 import hashlib
 import json
 import secrets
-import select
-import socket
 import string
 import threading
 import time
@@ -149,8 +147,8 @@ class GatewayState:
     auto_approve_after: Optional[int] = None                 # approve after N token polls
     deny_after: Optional[int] = None
     delay_s: float = 0.0
-    uplink_bytes_per_s: float = 0.0                          # slow client uplink: body takes len/rate to arrive
-    abandoned: int = 0                                       # bodies the client gave up on mid-upload
+    uplink_bytes_per_s: float = 0.0                          # read request bodies at most this fast
+    abandoned: int = 0                                       # bodies cut off before Content-Length (not stored)
     idle_timeout_s: Optional[float] = None                   # close kept-alive connections idle this long
     lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -343,26 +341,36 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(200, b"<html>fake connect page</html>", "text/html")
         self._json(404, {"message": "not_found"})
 
-    def _client_gone(self) -> bool:
+    def _read_body(self) -> Optional[bytes]:
+        """The whole body, read at most `uplink_bytes_per_s` fast, or None when the client hung up
+        or reset before Content-Length bytes arrived. Like the real gateway, nothing is stored."""
+        st = self.gateway_state
+        length = int(self.headers.get("Content-Length") or 0)
+        chunks, got = [], 0
         try:
-            readable, _, _ = select.select([self.connection], [], [], 0)
-            return bool(readable) and self.connection.recv(1, socket.MSG_PEEK) == b""
+            while got < length:
+                chunk = self.rfile.read1(min(65536, length - got))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                got += len(chunk)
+                if st.uplink_bytes_per_s:
+                    time.sleep(len(chunk) / st.uplink_bytes_per_s)
         except OSError:
-            return True
+            pass
+        if got < length:
+            with st.lock:
+                st.abandoned += 1
+            self.close_connection = True
+            return None
+        return b"".join(chunks)
 
     def _otlp(self, path: str) -> None:
         st = self.gateway_state
-        body = self._read()
+        body = self._read_body()
+        if body is None:
+            return
         content_type = self.headers.get("Content-Type", "")
-        if st.uplink_bytes_per_s:
-            # The body trickles in over a slow uplink. A client that timed out and hung up before
-            # it arrived gets nothing stored, like the real gateway (client_disconnected).
-            time.sleep(len(body) / st.uplink_bytes_per_s)
-            if self._client_gone():
-                with st.lock:
-                    st.abandoned += 1
-                self.close_connection = True
-                return
         if st.delay_s:
             time.sleep(st.delay_s)
         record, error = self._auth()
