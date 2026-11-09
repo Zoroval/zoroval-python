@@ -74,6 +74,9 @@ Environment variables: `ZOROVAL_INGEST_KEY`, `ZOROVAL_INGEST_URL`, `ZOROVAL_SERV
 
 - Prompts and outputs are captured by default. `capture_content=False` keeps model names, usage, timings, errors and tool-call ids, and drops content.
 - `redact=fn` gets each captured value and returns the value to send. If `fn` raises, that field is dropped, never sent raw. Changed spans carry `zoroval.redacted=true`.
+- Both controls also cover spans from other tools (OpenInference, Langfuse, OpenLLMetry, OTel GenAI). Their content attributes (for example `input.value`, `llm.input_messages.*`, `langfuse.observation.input`, `gen_ai.prompt.*`, `gen_ai.input.messages`) are dropped, or passed through `redact` as the raw attribute value, and GenAI span events are dropped. Your other exporters still get the original spans.
+- GenAI log events from the OTel contrib instrumentors are sent only when `capture_content=True` and no `redact` hook is set.
+- `@zoroval.step` and `@zoroval.tool` capture all arguments and the return value. Use `capture_input=False` on functions that take secrets, or `capture_content=False`.
 - Images and files in messages are replaced by placeholders.
 - Only GenAI spans leave the process. Your app's HTTP, database and other spans are never sent to Zoroval.
 - When Zoroval attaches to your existing OpenTelemetry provider, its LLM spans also reach your other exporters, with content. Use `capture_content=False` or a filter on that side if needed.

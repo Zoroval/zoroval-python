@@ -13,6 +13,7 @@ TracerProvider beside any other processors, so the app's own exporters are untou
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import os
 import threading
@@ -26,6 +27,7 @@ from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor
 
 from . import _context
 from ._config import Config
+from ._json import apply_redact
 from ._transport import WIRE_MARGIN, Transport, uuid7
 from ._util import COUNTERS, internal_error, log_once
 from ._version import SCOPE_NAME
@@ -53,6 +55,15 @@ GENAI_SCOPE_PREFIXES = (
     "litellm",
 )
 GENAI_ATTR_PREFIXES = ("gen_ai.", "zoroval.", "langfuse.", "llm.", "openinference.", "traceloop.")
+
+# Content other tools put on their spans. Dropped (or redacted) before export when content is off.
+CONTENT_ATTR_PREFIXES = (
+    "gen_ai.prompt", "gen_ai.completion", "gen_ai.input.messages", "gen_ai.output.messages",
+    "gen_ai.system_instructions", "gen_ai.tool.call.arguments", "gen_ai.tool.call.result",
+    "llm.input_messages", "llm.output_messages", "llm.prompts", "input.value", "output.value",
+    "langfuse.observation.input", "langfuse.observation.output", "langfuse.trace.input",
+    "langfuse.trace.output", "traceloop.entity.input", "traceloop.entity.output",
+)
 
 # Conversation ids other instrumentations set (design 6.5 "inherited").
 INHERITED_CONVERSATION_KEYS = (
@@ -257,7 +268,36 @@ class ZorovalSpanProcessor(SpanProcessor):
         extras = None
         if note and "zoroval.conversation.id" not in attrs and "gen_ai.conversation.id" not in attrs:
             extras = {"gen_ai.conversation.id": note}
+        span = self._scrub(span)
         self._enqueue(span, extras, estimate_size(span))
+
+    def _scrub(self, span: ReadableSpan) -> ReadableSpan:
+        """Other tools' spans carry content under their own keys. Drop it, or run the redact hook on
+        it, on a copy, so the app's other exporters still see the original span."""
+        cfg = self.cfg
+        scope = span.instrumentation_scope.name if span.instrumentation_scope else ""
+        if scope == SCOPE_NAME or (cfg.capture_content and cfg.redact is None):
+            return span
+        attrs = dict(span.attributes or {})
+        hits = [key for key in attrs if key.startswith(CONTENT_ATTR_PREFIXES)]
+        events = [event for event in span.events or () if not event.name.startswith("gen_ai.")]
+        if not hits and len(events) == len(span.events or ()):
+            return span
+        for key in hits:
+            if not cfg.capture_content:
+                del attrs[key]
+                continue
+            value, changed, ok = apply_redact(cfg.redact, attrs[key])
+            if not ok:
+                del attrs[key]
+            else:
+                attrs[key] = value
+            if changed:
+                attrs["zoroval.redacted"] = True
+        clean = copy.copy(span)
+        clean._attributes = attrs  # type: ignore[attr-defined]
+        clean._events = events  # type: ignore[attr-defined]
+        return clean
 
     def _enqueue(self, span: ReadableSpan, extras: Optional[dict], size: int) -> None:
         if self._pid != os.getpid():

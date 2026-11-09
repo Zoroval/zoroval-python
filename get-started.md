@@ -25,7 +25,7 @@ You are helping a developer send their LLM app's traces to Zoroval. Follow these
 
 ## Production
 
-Write nothing to production config. Tell the developer to make a deploy key in the Zoroval app and set `ZOROVAL_INGEST_KEY` in their host's secret settings themselves.
+Write nothing to production config. Tell the developer to run `zoroval login --name "<service> production" --env-file .env.production --replace` themselves, approve it in the browser, copy the value into their host's secret settings as `ZOROVAL_INGEST_KEY`, and delete that file. Do not copy the development key from `.env`.
 
 ## Without the Python SDK
 

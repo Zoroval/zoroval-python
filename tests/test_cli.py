@@ -203,3 +203,45 @@ def test_detect_reads_names_never_values(tmp_path, capsys):
     assert "LANGFUSE_SECRET_KEY" in report["env"]["vendor_vars"]
     assert main(["detect", str(tmp_path)]) == 0
     assert "value-that-must-not-appear" not in capsys.readouterr().out
+
+
+def test_get_json_does_not_follow_redirects_or_use_plain_http():
+    import http.server
+    import threading
+
+    from zoroval import _config
+    from zoroval._transport import Transport
+
+    seen = {}
+
+    class Target(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            seen["auth"] = self.headers.get("Authorization")
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    class Redirect(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{target.server_port}/x")
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    target = http.server.HTTPServer(("127.0.0.1", 0), Target)
+    redirect = http.server.HTTPServer(("127.0.0.1", 0), Redirect)
+    for server in (target, redirect):
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+    key = "zv_ingest_aaaaaaaaaaaa_" + "A" * 43
+    cfg = _config.Config(api_key=key, ingest_url=f"http://localhost:{redirect.server_port}")
+    assert key not in repr(cfg)
+    status, _ = Transport(cfg).get_json("/v1/ingest/status")
+    assert status == 302 and "auth" not in seen
+    plain = _config.Config(api_key=key, ingest_url="http://example.com")
+    assert Transport(plain).get_json("/v1/ingest/status")[0] == 0
+    for server in (target, redirect):
+        server.shutdown()

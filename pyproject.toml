@@ -27,7 +27,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "openai>=1.60", "anthropic>=0.40", "langfuse>=3"]
+dev = ["pytest>=8", "openai>=1.60", "anthropic>=0.40", "langfuse>=3", "python-dotenv", "openinference-instrumentation-openai"]
 
 [project.scripts]
 zoroval = "zoroval.cli.main:main"

@@ -12,7 +12,7 @@ Goal: the app's LLM calls show up in Zoroval as whole conversations (one trace p
 1. Never print, log or paste an ingest key. Never write it into a tracked file. Never commit it.
 2. Read env var names only, never values. `zoroval detect` already does this.
 3. Show the diff before every edit and wait for the user's yes.
-4. Ask before touching production config: deploy files, CI, hosting dashboards, secrets managers, OTel Collector config. For production, print the command with a placeholder; the user runs it with a deploy key made in the app.
+4. Ask before touching production config: deploy files, CI, hosting dashboards, secrets managers, OTel Collector config. For production, print the production login command (section 9); the user runs it themselves.
 5. Do not commit. List every file you changed, so rollback is "restore these files and run `zoroval logout`".
 6. Never copy another vendor's secret (Langfuse, LangSmith, Phoenix) into Zoroval config, and never send it anywhere.
 7. When you cannot tell (two possible conversation ids, an unknown framework), stop and ask.
@@ -52,7 +52,7 @@ with zoroval.conversation(session_id, user_id=user_id):
         turn.set_output(answer)
 ```
 
-Non-chat runs (agents, batch jobs): `with zoroval.trace("job-name"):`. Custom steps and tools: `@zoroval.step` and `@zoroval.tool` (sync or async). Content off: `zoroval.init(capture_content=False)`. Redaction: `zoroval.init(redact=fn)`; if `fn` raises, that field is dropped, never sent raw.
+Non-chat runs (agents, batch jobs): `with zoroval.trace("job-name"):`. Custom steps and tools: `@zoroval.step` and `@zoroval.tool` (sync or async). Content off: `zoroval.init(capture_content=False)`. Redaction: `zoroval.init(redact=fn)`; if `fn` raises, that field is dropped, never sent raw. Both also apply to other tools' spans (Langfuse, OpenInference, OTel GenAI), and GenAI log events are not sent when either is set.
 
 ## Cases
 
@@ -156,11 +156,13 @@ Detect: `.env*` files (with tracked and ignored status), a dotenv loader, Docker
 
 Development: `zoroval login` writes the key to the git-ignored env file (it checks: inside the project, not a symlink, untracked, git-ignored; mode 600). If the app does not load that file, tell the user to run it with their dotenv loader (for example `dotenv run -- python app.py`) or export the variable; do not add a loader without asking.
 
-Production: write nothing. Tell the user to make a deploy key in the app (Keys page) and set it in the host's secret settings themselves, for example:
+Production: write nothing. The app has no button to make a key. A production key comes from a second `zoroval login`, which the user runs themselves in their own terminal, with a name that says it is for production:
 
 ```bash
-railway variables --set "ZOROVAL_INGEST_KEY=<deploy key from the app>"
+zoroval login --name "<service> production" --env-file .env.production --replace
 ```
+
+Tell the user to approve it in the browser, copy the value from `.env.production` into the host's secret settings, then delete `.env.production`. The file must be git-ignored, or the command refuses. Never read that file or print its value. Do not copy the development key from `.env` to production. To rotate or remove a key, use the Keys page, which lists and revokes keys.
 
 Never put the key in Dockerfiles, CI files or committed config.
 

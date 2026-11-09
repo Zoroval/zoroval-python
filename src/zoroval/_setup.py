@@ -207,7 +207,8 @@ def _init(*, instrument: Any, tracer_provider: Any, **kwargs: Any) -> bool:
         _state.set_state(state)
         if owns:
             _install_set_provider_hook()
-        if cfg.export_logs:
+        # Log events hold raw content and cannot be redacted here, so they stay off with either control.
+        if cfg.export_logs and cfg.capture_content and cfg.redact is None:
             state.log_processor = _attach_logs(cfg, transport)
         _instrument(state, instrument)
         if not _atexit_registered:

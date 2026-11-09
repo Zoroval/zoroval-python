@@ -53,7 +53,7 @@ def _default_service_name() -> str:
 
 @dataclass
 class Config:
-    api_key: Optional[str] = None
+    api_key: Optional[str] = field(default=None, repr=False)
     ingest_url: str = DEFAULT_INGEST_URL
     service_name: str = "unknown_service:python"
     environment: Optional[str] = None
