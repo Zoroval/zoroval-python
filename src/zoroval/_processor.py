@@ -63,6 +63,8 @@ CONTENT_ATTR_PREFIXES = (
     "llm.input_messages", "llm.output_messages", "llm.prompts", "input.value", "output.value",
     "langfuse.observation.input", "langfuse.observation.output", "langfuse.trace.input",
     "langfuse.trace.output", "traceloop.entity.input", "traceloop.entity.output",
+    "llm.prompt_template.variables", "retrieval.documents", "reranker.input_documents",
+    "reranker.output_documents", "reranker.query", "embedding.embeddings", "message.content",
 )
 
 # Conversation ids other instrumentations set (design 6.5 "inherited").

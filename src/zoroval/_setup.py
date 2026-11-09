@@ -178,6 +178,11 @@ def _init(*, instrument: Any, tracer_provider: Any, **kwargs: Any) -> bool:
                      "(zv_ingest_...). Tracing is off. Run `zoroval doctor`.")
             return False
 
+        if not _config.ingest_url_ok(cfg.ingest_url):
+            log_once("bad-url", "zoroval: the ingest URL must be https (http only for localhost). "
+                     "Tracing is off so the key is not sent in clear text.")
+            return False
+
         TracerProvider = _sdk_provider_class()
         provider = tracer_provider
         if provider is None:

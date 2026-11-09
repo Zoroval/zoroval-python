@@ -82,3 +82,19 @@ def test_genai_log_events_are_not_exported_with_a_content_control(start_sdk, gat
         LogRecord(event_name="gen_ai.user.message", body={"content": SECRET}))
     flush()
     assert gateway.state.logs == []
+
+
+def test_content_off_drops_retrieval_documents(start_sdk, gateway):
+    start_sdk(capture_content=False)
+    with otel_trace.get_tracer("openinference.instrumentation.langchain").start_as_current_span("retrieve") as span:
+        span.set_attribute("openinference.span.kind", "RETRIEVER")
+        span.set_attribute("retrieval.documents.0.document.content", SECRET)
+        span.set_attribute("reranker.query", SECRET)
+    flush()
+    assert len(gateway.state.spans) == 1
+    assert SECRET not in json.dumps(gateway.state.spans)
+
+
+def test_plain_http_ingest_url_turns_tracing_off(gateway):
+    assert not zoroval.init(api_key=gateway.issue_key(), ingest_url="http://ingest.example.com")
+    assert zoroval.init(api_key=gateway.issue_key(), ingest_url=gateway.url)

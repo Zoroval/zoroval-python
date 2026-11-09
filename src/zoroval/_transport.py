@@ -41,7 +41,7 @@ from typing import Any, Callable, Mapping, Optional, Sequence
 import zstandard
 from opentelemetry.proto.common.v1.common_pb2 import AnyValue, KeyValue
 
-from ._config import Config
+from ._config import Config, ingest_url_ok
 from ._util import COUNTERS, log_once, logger
 from ._version import SDK_NAME, __version__
 
@@ -650,8 +650,7 @@ class Transport:
 
     def get_json(self, path: str, *, timeout: float = 10.0) -> tuple[int, Any]:
         url = self.cfg.ingest_url.rstrip("/") + path
-        parts = urllib.parse.urlsplit(url)
-        if parts.scheme != "https" and not (parts.scheme == "http" and parts.hostname in ("localhost", "127.0.0.1")):
+        if not ingest_url_ok(url):
             return 0, {"message": "refused: the ingest URL must be https (http only for localhost)"}
         request = urllib.request.Request(url, headers={
             "Authorization": f"Bearer {self.cfg.api_key}", "User-Agent": USER_AGENT, "Accept": "application/json"})

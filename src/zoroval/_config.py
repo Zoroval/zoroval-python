@@ -7,6 +7,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
+from urllib.parse import urlsplit
 
 DEFAULT_INGEST_URL = "https://ingest.zoroval.com"
 DEFAULT_APP_URL = "https://app.zoroval.com"
@@ -23,6 +24,12 @@ def key_id_of(key: Optional[str]) -> Optional[str]:
         return None
     match = KEY_PATTERN.match(key.strip())
     return match.group(1) if match else None
+
+
+def ingest_url_ok(url: str) -> bool:
+    """https only; plain http is allowed for localhost and 127.0.0.1 (the key is in every request)."""
+    parts = urlsplit(url)
+    return parts.scheme == "https" or (parts.scheme == "http" and parts.hostname in ("localhost", "127.0.0.1"))
 
 
 def _env_bool(name: str, default: bool) -> bool:
