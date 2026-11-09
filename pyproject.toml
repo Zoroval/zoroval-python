@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "zoroval"
+version = "0.0.1"
+description = "Zoroval SDK. Placeholder release; the first real version is coming soon."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "Zoroval" }]
+classifiers = ["Development Status :: 1 - Planning"]
+
+[project.urls]
+Homepage = "https://zoroval.com"
