@@ -1,4 +1,0 @@
-[project]
-name = "chat-api"
-version = "0.1.0"
-dependencies = ["openai>=1.60", "fastapi>=0.110"]

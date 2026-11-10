@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "zoroval"
-version = "0.1.0"
-description = "Zoroval SDK: trace your LLM app as whole conversations. OpenAI and Anthropic wrappers, safe OTLP transport, setup CLI."
+version = "0.1.1"
+description = "Trace your LLM app in Zoroval as whole conversations."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -26,9 +26,6 @@ dependencies = [
   "zstandard>=0.22",
 ]
 
-[project.optional-dependencies]
-dev = ["pytest>=8", "openai>=1.60", "anthropic>=0.40", "langfuse>=3", "python-dotenv", "openinference-instrumentation-openai"]
-
 [project.scripts]
 zoroval = "zoroval.cli.main:main"
 
@@ -38,7 +35,5 @@ Homepage = "https://zoroval.com"
 [tool.hatch.build.targets.wheel]
 packages = ["src/zoroval"]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-q"
-filterwarnings = ["ignore:This process .* is multi-threaded:DeprecationWarning"]
+[tool.hatch.build.targets.sdist]
+include = ["src/zoroval", "README.md", "LICENSE", "NOTICE"]

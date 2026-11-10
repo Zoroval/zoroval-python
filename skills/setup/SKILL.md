@@ -35,7 +35,7 @@ Goal: the app's LLM calls show up in Zoroval as whole conversations (one trace p
 
 ## Snippets
 
-Entry point (after any existing tracing setup, before the first LLM call is fine; the OpenAI and Anthropic clients are patched at the class level, so client creation order does not matter):
+Entry point (after any existing tracing setup, before the first LLM call; client creation order does not matter):
 
 ```python
 import zoroval
@@ -100,7 +100,7 @@ Rollback: remove the lines, `zoroval logout`.
 
 Detect: `langsmith`, `@traceable`, `LANGSMITH_*` or `LANGCHAIN_TRACING*` names.
 
-Do not edit unless the user asks. Explain: Zoroval runs beside LangSmith (case 1 changes, LangSmith untouched). For LangChain apps, add the OpenInference LangChain instrumentor so chain steps reach Zoroval. Reading LangSmith's own traces is not supported yet.
+Do not edit unless the user asks. Explain: Zoroval runs beside LangSmith (case 1 changes, LangSmith untouched). For LangChain apps, add the OpenInference LangChain instrumentor so chain steps reach Zoroval.
 
 ### 6. Vercel AI SDK or another TypeScript app
 
@@ -122,7 +122,7 @@ export function register() {
 }
 ```
 
-Turn on AI SDK telemetry per call, with the chat id as metadata: `experimental_telemetry: { isEnabled: true, functionId: "chat", metadata: { sessionId: chatId } }`. Write the key with `zoroval login --env-file .env.local` (Next.js loads it). Prove with `zoroval doctor` (needs the Python CLI: `pipx run zoroval doctor`). v1 maps the generic GenAI attributes of these spans.
+Turn on AI SDK telemetry per call, with the chat id as metadata: `experimental_telemetry: { isEnabled: true, functionId: "chat", metadata: { sessionId: chatId } }`. Write the key with `zoroval login --env-file .env.local` (Next.js loads it). Prove with `zoroval doctor` (needs the Python CLI: `pipx run zoroval doctor`).
 
 Rollback: restore the two files, `zoroval logout --env-file .env.local`.
 
@@ -148,7 +148,7 @@ Rollback: restore the files, `zoroval logout`.
 
 Detect: more than one `pyproject.toml`, `requirements.txt` or `package.json`; compose or deploy files with several services.
 
-Ask which services send traces. Then apply the matching case to each chosen service, one at a time, with `zoroval login --root <service folder>` per service (one key per service, all bound to the same project), and a distinct `service_name=` in each `init()`. Carrying one conversation id across services is not supported yet.
+Ask which services send traces. Then apply the matching case to each chosen service, one at a time, with `zoroval login --root <service folder>` per service (one key per service, all bound to the same project), and a distinct `service_name=` in each `init()`.
 
 ### 9. Env files and secrets managers
 
@@ -156,7 +156,7 @@ Detect: `.env*` files (with tracked and ignored status), a dotenv loader, Docker
 
 Development: `zoroval login` writes the key to the git-ignored env file (it checks: inside the project, not a symlink, untracked, git-ignored; mode 600). If the app does not load that file, tell the user to run it with their dotenv loader (for example `dotenv run -- python app.py`) or export the variable; do not add a loader without asking.
 
-Production: write nothing. The app has no button to make a key. A production key comes from a second `zoroval login`, which the user runs themselves in their own terminal, with a name that says it is for production:
+Production: write nothing. A production key comes from a second `zoroval login`, which the user runs themselves in their own terminal, with a name that says it is for production:
 
 ```bash
 zoroval login --name "<service> production" --env-file .env.production --replace
