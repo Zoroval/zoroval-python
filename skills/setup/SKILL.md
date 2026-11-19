@@ -52,7 +52,7 @@ with zoroval.conversation(session_id, user_id=user_id):
         turn.set_output(answer)
 ```
 
-Non-chat runs (agents, batch jobs): `with zoroval.trace("job-name"):`. Custom steps and tools: `@zoroval.step` and `@zoroval.tool` (sync or async). Content off: `zoroval.init(capture_content=False)`. Redaction: `zoroval.init(redact=fn)`; if `fn` raises, that field is dropped, never sent raw. Both also apply to other tools' spans (Langfuse, OpenInference, OTel GenAI), and GenAI log events are not sent when either is set.
+Non-chat runs (agents, batch jobs): `with zoroval.trace("job-name"):`. Custom steps and tools: `@zoroval.step` and `@zoroval.tool` (sync or async). Content off: `zoroval.init(capture_content=False)`. Redaction: `zoroval.init(redact=fn)`; if `fn` raises, that field is dropped, never sent raw. From 0.1.2 both cover prompts, outputs, tool-call arguments, metadata and error messages and stacks; ids, tags and span names are sent as they are. On other tools' spans (Langfuse, OpenInference, OTel GenAI) either setting keeps known metadata keys, drops or redacts known content keys, and drops every other text attribute. GenAI log events are not sent when either is set.
 
 ## Cases
 

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "zoroval"
-version = "0.1.1"
+version = "0.1.2"
 description = "Trace your LLM app in Zoroval as whole conversations."
 readme = "README.md"
 license = "Apache-2.0"
