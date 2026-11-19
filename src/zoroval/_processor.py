@@ -86,6 +86,7 @@ METADATA_ATTR_KEYS = frozenset({
     "gen_ai.openai.response.system_fingerprint",
     "error.type", "exception.type", "session.id", "user.id", "server.address",
     "openinference.span.kind", "llm.model_name", "llm.provider", "llm.system", "llm.request.type",
+    "llm.finish_reason",
     "tool.name", "tag.tags", "input.mime_type", "output.mime_type",
     "langfuse.observation.type", "langfuse.observation.model.name", "langfuse.observation.level",
     "langfuse.observation.completion_start_time", "langfuse.observation.usage_details",

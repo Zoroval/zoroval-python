@@ -81,9 +81,9 @@ Settings: `ZOROVAL_INGEST_KEY`, `ZOROVAL_SERVICE_NAME`, `ZOROVAL_ENVIRONMENT`, `
 
 - Prompts and outputs are sent by default.
 - `zoroval.init(capture_content=False)` drops content: prompts, outputs, tool-call arguments and results, metadata, and error messages and stack traces. It keeps model names, usage, timings, tool names and error types.
-- `zoroval.init(redact=fn)` passes the same content through your function before it is sent. If `fn` raises or returns None, that field is dropped.
-- Neither setting changes conversation ids, user ids, tags, span names, or values you set with `set_attribute`. Do not put personal data there if it must not leave your app.
-- Other tools' spans (Langfuse, OpenInference, OpenLLMetry and other OpenTelemetry GenAI spans): with either setting on, Zoroval keeps known metadata keys (model, provider, kind, ids, usage, timings) as they are. Known content keys are dropped or passed through `fn`. Every other text attribute is dropped. GenAI log events are not sent.
+- `zoroval.init(redact=fn)` passes the same content through your function before it is sent. If `fn` raises or returns None, that field is dropped. `fn` gets values as captured: message lists and dicts, and plain strings for tool-call arguments, error messages and stack traces. Handle strings too.
+- Neither setting changes conversation ids, user ids, tags, span names, stop sequences, or values you set with `set_attribute`. Do not put personal data there if it must not leave your app.
+- Other tools' spans (Langfuse, OpenInference, OpenLLMetry and other OpenTelemetry GenAI spans): with either setting on, Zoroval keeps span names, numbers, flags and known metadata keys (model, provider, span kind, names, tags, ids, finish reasons, usage, timings) as they are. Known content keys and status messages are dropped or passed through `fn`. Every other text attribute is dropped. GenAI log events are not sent.
 - These rules hold from version 0.1.2. Earlier versions sent tool-call arguments, metadata and error text with these settings on.
 - Only LLM spans are sent. Your app's HTTP, database and other spans stay with you.
 
