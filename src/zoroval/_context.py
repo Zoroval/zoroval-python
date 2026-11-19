@@ -150,14 +150,44 @@ def add_truncated(span: Any, count: int) -> None:
 
 
 def set_metadata_attr(span: Any, metadata: Optional[dict]) -> None:
+    """Metadata is app data, so it follows the content controls: dropped when content is off,
+    passed through the redact hook when one is set."""
     if not metadata:
         return
     state = _state.get()
     limit = state.cfg.max_metadata_bytes if state else 16 * 1024
-    text, cut = _json.fit(_json.dumps(metadata), limit)
-    span.set_attribute(METADATA, text)
-    if cut:
-        add_truncated(span, cut)
+    set_content(span, METADATA, metadata, limit=limit)
+
+
+def redact_value(span: Any, value: Any) -> tuple[Any, bool]:
+    """Run the redact hook on one value. Returns (value, ok); ok=False means drop it.
+    Sets zoroval.redacted on the span when the hook changed or dropped the value."""
+    state = _state.get()
+    redact = state.cfg.redact if state else None
+    new, changed, ok = _json.apply_redact(redact, value)
+    if changed:
+        span.set_attribute(REDACTED, True)
+    return new, ok
+
+
+def error_text(span: Any, text: str) -> Optional[str]:
+    """Error text (exception messages, stacks, status messages) under the content controls.
+
+    None when content is off or the redact hook drops it; else the text, through the hook if set.
+    """
+    state = _state.get()
+    if state is None or not state.cfg.capture_content:
+        return None
+    value, ok = redact_value(span, text)
+    if not ok:
+        return None
+    return value if isinstance(value, str) else _json.dumps(value)
+
+
+def set_error_status(span: Any, text: Any) -> None:
+    """Span status ERROR, with `text` as the description only when the content controls allow it."""
+    description = error_text(span, str(text)[:32768]) if text is not None else None
+    span.set_status(Status(StatusCode.ERROR, description))
 
 
 def conversation_attributes() -> dict[str, Any]:
@@ -189,21 +219,29 @@ def root_attributes(user_id: Optional[str], tags: Optional[Sequence[str]]) -> di
 
 
 def record_error(span: Any, error: BaseException) -> None:
-    """Span status ERROR plus a standard `exception` event with a capped stack."""
+    """Span status ERROR plus a standard `exception` event with a capped stack.
+
+    Exception text often holds user data. With content off only the exception type is sent.
+    With a redact hook, the message and the stack go through it; if the hook fails they are dropped.
+    """
     try:
         state = _state.get()
         stack_limit = state.cfg.max_stack_bytes if state else 16 * 1024
-        message = f"{type(error).__name__}: {error}"[:32768]
-        span.set_status(Status(StatusCode.ERROR, message))
-        stack = "".join(traceback.format_exception(type(error), error, error.__traceback__))
-        if len(stack) > stack_limit:
-            stack = stack[-stack_limit:]
-        span.add_event("exception", {
-            "exception.type": type(error).__qualname__,
-            "exception.message": str(error)[:32768],
-            "exception.stacktrace": stack,
-            "exception.escaped": True,
-        })
+        event: dict[str, Any] = {"exception.type": type(error).__qualname__, "exception.escaped": True}
+        description = type(error).__name__
+        message = error_text(span, str(error)[:32768])
+        if message is not None:
+            event["exception.message"] = message
+            description = f"{description}: {message}"[:32768]
+        if state is not None and state.cfg.capture_content:
+            stack = "".join(traceback.format_exception(type(error), error, error.__traceback__))
+            if len(stack) > stack_limit:
+                stack = stack[-stack_limit:]
+            stack = error_text(span, stack)
+            if stack is not None:
+                event["exception.stacktrace"] = stack
+        span.set_status(Status(StatusCode.ERROR, description))
+        span.add_event("exception", event)
         span.set_attribute("error.type", type(error).__qualname__)
     except Exception as inner:  # noqa: BLE001
         internal_error("record_error", inner)
@@ -352,7 +390,7 @@ class Observation:
             if isinstance(error, BaseException):
                 record_error(self.span, error)
             else:
-                self.span.set_status(Status(StatusCode.ERROR, str(error)[:32768]))
+                set_error_status(self.span, error)
         except Exception as inner:  # noqa: BLE001
             internal_error("set_error", inner)
 

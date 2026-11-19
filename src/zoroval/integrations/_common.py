@@ -170,10 +170,18 @@ class Generation:
             if output_messages:
                 _context.set_content(span, "gen_ai.output.messages", output_messages)
             if tool_calls:
-                calls = [{"id": c.get("id"), "name": c.get("name"),
-                          **({"arguments": c.get("arguments")} if _context.content_allowed(span)
-                             and c.get("arguments") is not None else {})}
-                         for c in tool_calls]
+                # Ids and names always go, so tool runs stay linked. Arguments are content: they
+                # follow capture_content and go through the redact hook (dropped if it fails).
+                allowed = _context.content_allowed(span)
+                calls = []
+                for c in tool_calls:
+                    call = {"id": c.get("id"), "name": c.get("name")}
+                    arguments = c.get("arguments")
+                    if allowed and arguments is not None:
+                        arguments, ok = _context.redact_value(span, arguments)
+                        if ok:
+                            call["arguments"] = arguments
+                    calls.append(call)
                 state = _state.get()
                 limit = state.cfg.max_content_bytes if state else 1 << 20
                 text, cut = _json.fit(_json.dumps(calls), limit)

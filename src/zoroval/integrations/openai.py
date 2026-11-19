@@ -319,9 +319,8 @@ def _responses_finish(gen: Generation, response: Any, error: Optional[BaseExcept
     if status == "failed" and error is None:
         err = get(response, "error")
         gen.set("error.type", str(get(err, "code") or "response_failed"))
-        from opentelemetry.trace import Status, StatusCode
         if gen.span is not None:
-            gen.span.set_status(Status(StatusCode.ERROR, str(get(err, "message") or "response failed")[:32768]))
+            _context.set_error_status(gen.span, get(err, "message") or "response failed")
     gen.finish(response_id=get(response, "id"), model=get(response, "model"),
                finish_reasons=[reason] if reason else [], output_messages=outputs, tool_calls=calls,
                usage=_responses_usage(get(response, "usage")), error=error)
@@ -363,8 +362,7 @@ class _ResponsesStreamState:
         elif self.text:
             parts = [text_part("".join(self.text))]
         if self.error is not None and error is None and self.gen.span is not None:
-            from opentelemetry.trace import Status, StatusCode
-            self.gen.span.set_status(Status(StatusCode.ERROR, str(get(self.error, "message") or "stream error")))
+            _context.set_error_status(self.gen.span, get(self.error, "message") or "stream error")
         self.gen.finish(response_id=self.id, model=self.model, finish_reasons=["incomplete"],
                         output_messages=[{"role": "assistant", "parts": parts, "finish_reason": "incomplete"}],
                         tool_calls=calls, error=error)
