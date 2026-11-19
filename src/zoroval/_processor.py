@@ -13,7 +13,6 @@ TracerProvider beside any other processors, so the app's own exporters are untou
 
 from __future__ import annotations
 
-import copy
 import hashlib
 import os
 import threading
@@ -23,11 +22,12 @@ from collections import OrderedDict, deque
 from typing import Any, Deque, Iterable, Optional
 
 from opentelemetry import trace as otel_trace
-from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor
+from opentelemetry.sdk.trace import Event, ReadableSpan, Span, SpanProcessor
+from opentelemetry.trace import Status
 
 from . import _context
 from ._config import Config
-from ._json import apply_redact
+from ._json import apply_redact, dumps
 from ._transport import WIRE_MARGIN, Transport, uuid7
 from ._util import COUNTERS, internal_error, log_once
 from ._version import SCOPE_NAME
@@ -56,16 +56,48 @@ GENAI_SCOPE_PREFIXES = (
 )
 GENAI_ATTR_PREFIXES = ("gen_ai.", "zoroval.", "langfuse.", "llm.", "openinference.", "traceloop.")
 
-# Content other tools put on their spans. Dropped (or redacted) before export when content is off.
+# Content other tools put on their spans. With content off it is dropped; with a redact hook it is
+# passed through the hook. Any other string attribute that is not in METADATA_ATTR_KEYS is dropped
+# when either control is on, so an unknown key never carries content out.
 CONTENT_ATTR_PREFIXES = (
     "gen_ai.prompt", "gen_ai.completion", "gen_ai.input.messages", "gen_ai.output.messages",
     "gen_ai.system_instructions", "gen_ai.tool.call.arguments", "gen_ai.tool.call.result",
+    "gen_ai.tool.definitions",
     "llm.input_messages", "llm.output_messages", "llm.prompts", "input.value", "output.value",
     "langfuse.observation.input", "langfuse.observation.output", "langfuse.trace.input",
     "langfuse.trace.output", "traceloop.entity.input", "traceloop.entity.output",
-    "llm.prompt_template.variables", "retrieval.documents", "reranker.input_documents",
+    "llm.prompt_template", "llm.function_call", "llm.tools", "llm.invocation_parameters",
+    "retrieval.documents", "reranker.input_documents",
     "reranker.output_documents", "reranker.query", "embedding.embeddings", "message.content",
+    "metadata", "langfuse.observation.metadata", "langfuse.trace.metadata",
+    "langfuse.observation.model.parameters", "langfuse.observation.status_message",
+    "traceloop.association.properties", "tool_arguments", "tool_response",
+    "exception.message", "exception.stacktrace",
 )
+
+# Metadata keys from other tools' spans that are kept as they are when a content control is on:
+# kinds, models, providers, ids, names, levels, usage and timings. Numbers and booleans are kept too.
+METADATA_ATTR_KEYS = frozenset({
+    "gen_ai.operation.name", "gen_ai.provider.name", "gen_ai.system", "gen_ai.request.model",
+    "gen_ai.response.model", "gen_ai.response.id", "gen_ai.response.finish_reasons", "gen_ai.output.type",
+    "gen_ai.conversation.id", "gen_ai.agent.id", "gen_ai.agent.name", "gen_ai.tool.name",
+    "gen_ai.tool.call.id", "gen_ai.tool.type", "gen_ai.openai.previous_response_id",
+    "gen_ai.openai.request.service_tier", "gen_ai.openai.response.service_tier",
+    "gen_ai.openai.response.system_fingerprint",
+    "error.type", "exception.type", "session.id", "user.id", "server.address",
+    "openinference.span.kind", "llm.model_name", "llm.provider", "llm.system", "llm.request.type",
+    "tool.name", "tag.tags", "input.mime_type", "output.mime_type",
+    "langfuse.observation.type", "langfuse.observation.model.name", "langfuse.observation.level",
+    "langfuse.observation.completion_start_time", "langfuse.observation.usage_details",
+    "langfuse.observation.cost_details", "langfuse.trace.name", "langfuse.trace.tags",
+    "langfuse.trace.session_id", "langfuse.trace.user_id", "langfuse.session.id", "langfuse.user.id",
+    "langfuse.environment", "langfuse.release", "langfuse.version",
+    "traceloop.span.kind", "traceloop.entity.name", "traceloop.workflow.name",
+    "traceloop.association.properties.session_id", "traceloop.association.properties.user_id",
+    "ai.telemetry.metadata.sessionId", "ai.telemetry.metadata.conversationId", "ai.telemetry.metadata.userId",
+    "zoroval.conversation.id", "zoroval.user.id", "zoroval.observation.type", "zoroval.tags",
+    "anthropic.session.thread.id",
+})
 
 # Conversation ids other instrumentations set (design 6.5 "inherited").
 INHERITED_CONVERSATION_KEYS = (
@@ -87,6 +119,18 @@ def is_genai_span(span: ReadableSpan) -> bool:
         return True
     attrs = span.attributes or {}
     return any(key.startswith(GENAI_ATTR_PREFIXES) for key in attrs)
+
+
+def _is_number_or_flag(value: Any) -> bool:
+    if isinstance(value, (bool, int, float)):
+        return True
+    return isinstance(value, (list, tuple)) and all(isinstance(v, (bool, int, float)) for v in value)
+
+
+def _is_attribute_value(value: Any) -> bool:
+    if isinstance(value, (str, bool, int, float)):
+        return True
+    return isinstance(value, (list, tuple)) and all(isinstance(v, (str, bool, int, float)) for v in value)
 
 
 def sample_keep(key: str, rate: float) -> bool:
@@ -274,32 +318,58 @@ class ZorovalSpanProcessor(SpanProcessor):
         self._enqueue(span, extras, estimate_size(span))
 
     def _scrub(self, span: ReadableSpan) -> ReadableSpan:
-        """Other tools' spans carry content under their own keys. Drop it, or run the redact hook on
-        it, on a copy, so the app's other exporters still see the original span."""
+        """With a content control on, other tools' spans keep known metadata keys, numbers and flags.
+        Known content keys and the status message are dropped (content off) or passed through the
+        redact hook. Other text attributes and GenAI events are dropped. Event attributes follow the
+        same rules. The result is a copy, so the app's other exporters still see the original span."""
         cfg = self.cfg
         scope = span.instrumentation_scope.name if span.instrumentation_scope else ""
         if scope == SCOPE_NAME or (cfg.capture_content and cfg.redact is None):
             return span
-        attrs = dict(span.attributes or {})
-        hits = [key for key in attrs if key.startswith(CONTENT_ATTR_PREFIXES)]
-        events = [event for event in span.events or () if not event.name.startswith("gen_ai.")]
-        if not hits and len(events) == len(span.events or ()):
-            return span
-        for key in hits:
-            if not cfg.capture_content:
-                del attrs[key]
+        attrs, redacted = self._scrub_attributes(span.attributes)
+        events = []
+        for event in span.events or ():
+            if event.name.startswith("gen_ai."):
                 continue
-            value, changed, ok = apply_redact(cfg.redact, attrs[key])
-            if not ok:
-                del attrs[key]
-            else:
-                attrs[key] = value
-            if changed:
-                attrs["zoroval.redacted"] = True
-        clean = copy.copy(span)
-        clean._attributes = attrs  # type: ignore[attr-defined]
-        clean._events = events  # type: ignore[attr-defined]
-        return clean
+            event_attrs, event_redacted = self._scrub_attributes(event.attributes)
+            redacted = redacted or event_redacted
+            events.append(Event(event.name, event_attrs, event.timestamp))
+        status = span.status
+        if status is not None and status.description:
+            description, changed, ok = self._content(status.description)
+            redacted = redacted or changed
+            if ok and not isinstance(description, str):
+                description = dumps(description)
+            status = Status(status.status_code, description if ok else None)
+        if redacted:
+            attrs["zoroval.redacted"] = True
+        return ReadableSpan(
+            name=span.name, context=span.context, parent=span.parent, resource=span.resource,
+            attributes=attrs, events=events, links=span.links, kind=span.kind, status=status,
+            start_time=span.start_time, end_time=span.end_time,
+            instrumentation_scope=span.instrumentation_scope)
+
+    def _content(self, value: Any) -> tuple[Any, bool, bool]:
+        """(value, redacted, ok) for one content value under the current controls."""
+        if not self.cfg.capture_content:
+            return None, False, False
+        return apply_redact(self.cfg.redact, value)
+
+    def _scrub_attributes(self, attributes: Any) -> tuple[dict, bool]:
+        out: dict[str, Any] = {}
+        redacted = False
+        for key, value in (attributes or {}).items():
+            if key in METADATA_ATTR_KEYS:
+                out[key] = value
+            elif key.startswith(CONTENT_ATTR_PREFIXES):
+                new, changed, ok = self._content(value)
+                redacted = redacted or changed
+                if ok:
+                    out[key] = new if _is_attribute_value(new) else dumps(new)
+            elif _is_number_or_flag(value):
+                out[key] = value
+            # any other string attribute may carry content: dropped
+        return out, redacted
 
     def _enqueue(self, span: ReadableSpan, extras: Optional[dict], size: int) -> None:
         if self._pid != os.getpid():
