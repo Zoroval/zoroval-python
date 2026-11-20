@@ -79,8 +79,11 @@ Settings: `ZOROVAL_INGEST_KEY`, `ZOROVAL_SERVICE_NAME`, `ZOROVAL_ENVIRONMENT`, `
 
 ## Privacy
 
-- Prompts and outputs are sent by default. `zoroval.init(capture_content=False)` keeps model names, usage, timings and errors, and drops content.
-- `zoroval.init(redact=fn)` passes each captured value through your function before it is sent. If `fn` raises, that field is dropped.
+- Prompts and outputs are sent by default.
+- `zoroval.init(capture_content=False)` drops prompts, outputs and tool-call arguments. It still sends model names, usage, timings, tool names, the metadata you set, and error messages with their stack traces.
+- `zoroval.init(redact=fn)` passes prompts and outputs through your function before they are sent. If `fn` raises, that field is dropped. Tool-call arguments, the metadata you set, and error messages with their stack traces are sent as they are.
+- On other tools' spans (Langfuse, OpenInference, OpenLLMetry), both settings cover only their standard prompt, output and document fields. Other attributes those tools add, such as prompt templates, function-call arguments or metadata, are sent as they are.
+- If personal data can appear in error messages, metadata or tool arguments, remove it before it reaches the SDK.
 - Only LLM spans are sent. Your app's HTTP, database and other spans stay with you.
 
 ## License
