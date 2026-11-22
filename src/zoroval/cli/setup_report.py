@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.request
 from typing import Any, Optional
 
@@ -16,8 +17,9 @@ from .._transport import USER_AGENT, _default_opener
 
 ENV_VAR = "ZOROVAL_SETUP"
 TIMEOUT = 2.0
-MAX_NAMES = 20
-MAX_NAME_LENGTH = 40
+MAX_NAMES = 10
+
+NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._+-]{0,39}$")
 
 _sent: set[str] = set()
 
@@ -68,8 +70,7 @@ def app_names(scan_report: dict[str, Any]) -> list[str]:
     names.extend(str(k) for k in (scan_report.get("servers") or {}))
     seen: list[str] = []
     for name in names:
-        name = name[:MAX_NAME_LENGTH]
-        if name and name not in seen:
+        if NAME_PATTERN.match(name) and name not in seen:
             seen.append(name)
     return seen[:MAX_NAMES]
 
