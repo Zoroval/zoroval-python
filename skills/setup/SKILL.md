@@ -16,6 +16,7 @@ Goal: the app's LLM calls show up in Zoroval as whole conversations (one trace p
 5. Do not commit. List every file you changed, so rollback is "restore these files and run `zoroval logout`".
 6. Never copy another vendor's secret (Langfuse, LangSmith, Phoenix) into Zoroval config, and never send it anywhere.
 7. When you cannot tell (two possible conversation ids, an unknown framework), stop and ask.
+8. If the prompt gave a `ZOROVAL_SETUP` value, keep it set for every `zoroval` command you run.
 
 ## Order
 

@@ -9,6 +9,7 @@ You are helping a developer send their LLM app's traces to Zoroval. Follow these
 - Show a diff before every edit and wait for the developer's yes.
 - Ask before touching deploy files, CI, hosting dashboards, secrets managers or Collector config.
 - Do not commit. Keep a list of changed files for rollback.
+- If the prompt gave a `ZOROVAL_SETUP` value, keep it set for every `zoroval` command you run.
 
 ## Steps
 
