@@ -144,7 +144,7 @@ def test_login_with_approved_code(serve, monkeypatch, tmp_path, capsys):
     assert paths(server).count("/api/agent-connect/token") == 1
 
 
-@pytest.mark.parametrize("status", [400, 404, 410])
+@pytest.mark.parametrize("status", [400, 403, 404, 409, 410])
 def test_login_with_rejected_code(serve, monkeypatch, tmp_path, capsys, status):
     server = serve({"/api/agent-connect": (status, {"message": "This setup code has expired."}),
                     "/api/agent-setup/progress": (200, {})})
