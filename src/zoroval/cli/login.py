@@ -18,7 +18,7 @@ from typing import Any, Optional
 
 from .. import _config
 from .._transport import USER_AGENT
-from . import envfile
+from . import envfile, setup_report
 
 from .._transport import _default_opener
 
@@ -49,6 +49,7 @@ def _say(message: str) -> None:
 def run(*, root: Path, env_file: Path, name: Optional[str], app_url: str, no_browser: bool, replace: bool,
         allow_no_git: bool, timeout: float) -> int:
     env_path = env_file if env_file.is_absolute() else root / env_file
+    setup_report.started(app_url=app_url)
     # 1. Already set? Report presence only.
     if not replace:
         if os.environ.get(envfile.KEY_VAR):
@@ -64,28 +65,44 @@ def run(*, root: Path, env_file: Path, name: Optional[str], app_url: str, no_bro
         return 1
     # 3. Start the device flow.
     client_name = (name or f"{root.resolve().name} (agent)")[:120]
-    status, body = _post(app_url.rstrip("/") + "/api/agent-connect", {"name": client_name})
+    setup_code = setup_report.setup_code()
+    payload: dict[str, Any] = {"name": client_name}
+    if setup_code:
+        payload["setup_code"] = setup_code
+    status, body = _post(app_url.rstrip("/") + "/api/agent-connect", payload)
+    if setup_code and 400 <= status < 500:
+        message = body.get("message") or body.get("error") or body.get("detail")
+        _say(str(message) if isinstance(message, str) and message else
+             "The setup code was not accepted. Ask the developer to copy a fresh prompt from Zoroval.")
+        return 1
     if status != 200 or "device_code" not in body:
         _say(f"Could not start sign-in at {app_url} (status {status or 'no connection'}).")
         return 1
     device_code = body["device_code"]
     interval = max(float(body.get("interval") or 3), MIN_INTERVAL)
     expires_at = time.monotonic() + min(float(body.get("expires_in") or 600), timeout)
-    link = body.get("verification_uri_complete") or body.get("verification_uri")
-    _say(f"Open this link and approve the request named \"{client_name}\":\n  {link}\n"
-         f"Check that the page shows the code {body.get('user_code')}.")
-    if not no_browser and sys.stdout.isatty() and not os.environ.get("CI"):
-        try:
-            webbrowser.open(link)
-        except Exception:  # noqa: BLE001
-            pass
+    approved = body.get("approved") is True
+    handle = body.get("handle") if isinstance(body.get("handle"), str) else None
+    project_name = body.get("project_name") if isinstance(body.get("project_name"), str) else None
+    if not approved:
+        link = body.get("verification_uri_complete") or body.get("verification_uri")
+        _say(f"Open this link and approve the request named \"{client_name}\":\n  {link}\n"
+             f"Check that the page shows the code {body.get('user_code')}.")
+        if not no_browser and sys.stdout.isatty() and not os.environ.get("CI"):
+            try:
+                webbrowser.open(link)
+            except Exception:  # noqa: BLE001
+                pass
     # 4. Poll.
     token_url = app_url.rstrip("/") + "/api/agent-connect/token"
+    first_poll = approved   # an approved request has its key ready: no wait before the first poll
     while True:
         if time.monotonic() >= expires_at:
             _say("The request expired before it was approved. Run `zoroval login` again.")
             return 1
-        time.sleep(interval)
+        if not first_poll:
+            time.sleep(interval)
+        first_poll = False
         status, body = _post(token_url, {"device_code": device_code})
         if status == 202:
             continue
@@ -120,6 +137,8 @@ def run(*, root: Path, env_file: Path, name: Optional[str], app_url: str, no_bro
         return 1
     _say(f"Key written to {env_path.name} as {envfile.KEY_VAR} (key id {body.get('key_id')}, project "
          f"{body.get('project_key')}). The key is not shown. File mode is 600.")
+    if approved:
+        _say(f"{handle or 'Setup code'} connected to {project_name or body.get('project_name') or body.get('project_key')}")
     if write_url:
         _say(f"{envfile.URL_VAR} was written too ({write_url}).")
     _say("Next: load the env file in your app (for example python-dotenv) and run `zoroval doctor`.")

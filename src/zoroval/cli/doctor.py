@@ -23,7 +23,7 @@ from urllib.parse import quote
 from .. import _config
 from .._transport import Transport, uuid7
 from .._version import SCOPE_NAME, __version__
-from . import envfile
+from . import envfile, setup_report
 
 PASS, WARN, FAIL = "pass", "warn", "fail"
 
@@ -189,6 +189,7 @@ def run(*, root: Path, env_file: Path, ingest_url: Optional[str], timeout: float
 
 
 def main(args: Any) -> int:
+    setup_report.doctor_started()
     report = run(root=Path(args.root or "."), env_file=Path(args.env_file), ingest_url=args.ingest_url,
                  timeout=float(args.timeout), wait=float(args.wait), skip_test_trace=args.no_test_trace)
     if args.json:

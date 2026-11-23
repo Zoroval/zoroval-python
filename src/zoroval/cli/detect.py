@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
-from . import envfile
+from . import envfile, setup_report
 
 SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "env", "__pycache__", "dist", "build", ".tox", ".mypy_cache",
              ".pytest_cache", "site-packages", ".next", ".idea", ".vscode", ".ruff_cache"}
@@ -531,6 +531,7 @@ def main(args: Any) -> int:
         print(f"zoroval detect: {root} is not a folder", file=sys.stderr)
         return 2
     report = scan(root)
+    setup_report.detected(report)
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=False))
         return 0
