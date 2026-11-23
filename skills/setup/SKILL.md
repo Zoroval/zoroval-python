@@ -16,14 +16,15 @@ Goal: the app's LLM calls show up in Zoroval as whole conversations (one trace p
 5. Do not commit. List every file you changed, so rollback is "restore these files and run `zoroval logout`".
 6. Never copy another vendor's secret (Langfuse, LangSmith, Phoenix) into Zoroval config, and never send it anywhere.
 7. When you cannot tell (two possible conversation ids, an unknown framework), stop and ask.
+8. If the prompt gave a `ZOROVAL_SETUP` value, keep it set for every `zoroval` command you run.
 
 ## Order
 
 1. **Detect.** Run `pip install zoroval` (or the project's package manager) in the project's environment, then `zoroval detect --json`. Read `cases`, `explain_only`, `llm_calls`, `chat_id_candidates`, `entry_points`, `env` and `notes`. If `env.ZOROVAL_INGEST_KEY` is `present`, skip the login step.
 2. **Plan.** Tell the user, in a short list: which case(s) apply, which files you will change, and what the conversation id will be. Use the case sections below. Start from `plan` in the detect output.
 3. **Ask.** Get a yes on the plan. Ask which variable is the conversation id when `notes` says there are several, or none.
-4. **Edit.** For each file: show the diff, wait for yes, apply. Keep edits minimal.
-5. **Log in.** Run `zoroval login`. It prints a link and a code; ask the user to open it, sign in, check the code and approve. The command writes the key to the git-ignored env file with mode 600 and never shows it. If it refuses because the env file is not git-ignored, show the `.gitignore` diff that adds it, wait for yes, then run it again.
+4. **Edit.** For each file: show the diff, wait for yes, apply. Keep edits minimal. The app must load the env file at startup (for example with python-dotenv) so `ZOROVAL_INGEST_KEY` is set; add that if it does not already.
+5. **Log in.** Run `zoroval login`. With a `ZOROVAL_SETUP` value it connects on its own. Without one it prints a link and a code; ask the user to open it, sign in, check the code and approve. The command writes the key to the git-ignored env file with mode 600 and never shows it. If it refuses because the env file is not git-ignored, show the `.gitignore` diff that adds it, wait for yes, then run it again.
 6. **Prove.** Run `zoroval doctor`. Then run the app once (or ask the user to send two messages in one chat) and run `zoroval doctor --wait 60`. Success: every required check is `ok`, "first trace received" passes, and for chat apps there is no "ungrouped" warning.
 7. **Report.** Say what changed (file list), what was proven, and the rollback steps. Say what you did not do (for example: production key not set).
 
