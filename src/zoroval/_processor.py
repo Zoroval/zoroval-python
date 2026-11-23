@@ -76,6 +76,7 @@ INHERITED_CONVERSATION_KEYS = (
 _MAX_NOTES = 50_000
 _BATCH_BUDGET_S = 30.0          # retries for one batch; grows to 1.5 request timeouts for big bodies
 _MAX_BATCH_AGE_S = 3600.0       # a failing batch is kept this long; the byte and span caps still drop the oldest
+_MAX_REQUEUES: Optional[int] = None   # optional extra cap on requeues per batch; None means age only
 _MIN_BATCH_BYTES = 64 * 1024    # timeouts halve the batch size down to this
 _GROW_AFTER_OK = 4              # sends in a row before a halved batch size doubles again
 _LIVE: "weakref.WeakSet[ZorovalSpanProcessor]" = weakref.WeakSet()
@@ -150,10 +151,12 @@ class _Batch:
     """Spans sent together under one batch id. A requeued batch keeps its id: the gateway dedupes
     a resend, and a subset under the same id is safe because spans are deduped by id downstream."""
 
-    __slots__ = ("items", "batch_id", "born", "size")
+    __slots__ = ("items", "batch_id", "born", "size", "requeues")
 
-    def __init__(self, items: Deque[_Item], batch_id: str, born: Optional[float] = None) -> None:
+    def __init__(self, items: Deque[_Item], batch_id: str, born: Optional[float] = None,
+                 requeues: int = 0) -> None:
         self.items = items
+        self.requeues = requeues
         self.batch_id = batch_id
         self.born = time.monotonic() if born is None else born
         self.size = sum(item[2] for item in items)
@@ -161,8 +164,8 @@ class _Batch:
     def halves(self) -> list["_Batch"]:
         items = list(self.items)
         half = len(items) // 2
-        return [_Batch(deque(items[:half]), uuid7(), self.born),
-                _Batch(deque(items[half:]), uuid7(), self.born)]
+        return [_Batch(deque(items[:half]), uuid7(), self.born, self.requeues),
+                _Batch(deque(items[half:]), uuid7(), self.born, self.requeues)]
 
 
 class ZorovalSpanProcessor(SpanProcessor):
@@ -492,7 +495,9 @@ class ZorovalSpanProcessor(SpanProcessor):
             if result.reason not in ("shutdown", "deadline"):
                 self.transport.back_off(result.reason)
             return self._put_back(batch)
-        if result.retryable and time.monotonic() - batch.born < _MAX_BATCH_AGE_S:
+        if (result.retryable and time.monotonic() - batch.born < _MAX_BATCH_AGE_S
+                and (_MAX_REQUEUES is None or batch.requeues < _MAX_REQUEUES)):
+            batch.requeues += 1
             COUNTERS.add("batches_requeued")
             delay = self.transport.back_off(result.reason or "unreachable")
             log_once("requeued", "zoroval: could not deliver a batch (%s). Its spans stay queued and are "
