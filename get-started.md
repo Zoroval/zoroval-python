@@ -1,6 +1,6 @@
 # Set up Zoroval (for coding agents)
 
-You are helping a developer send their LLM app's traces to Zoroval. Follow these steps. The full procedure, with one section per starting point, is the setup skill: `skills/setup/SKILL.md` in the `zoroval` package repository.
+You are helping a developer send their LLM app's traces to Zoroval. Follow these steps. The full procedure, with one section per starting point, is the setup skill: https://github.com/Zoroval/zoroval-python/blob/main/skills/setup/SKILL.md.
 
 ## Rules
 
@@ -40,7 +40,7 @@ Use the SDK for the language of the code that calls the model. Do not choose by 
 3. Show the developer a short plan from the detect output and the skill. Ask which variable is the chat or conversation id if it is unclear.
 4. Make the edits, each after a diff and a yes:
    - `import * as zoroval from "zoroval"` and `zoroval.init()` once at app start, before the first model call. Next.js loads `.env.local` itself. For other Node apps, add loading of `.env` at startup that does not fail when the file is missing, because production gets the key from the host: `node --env-file-if-exists=.env` on Node 20.19 or 22.9 and newer, otherwise dotenv (`import "dotenv/config"`). Plain `--env-file` makes the app exit when `.env` is absent. Ask before changing a start script.
-   - Wrap the client: `const openai = zoroval.wrapOpenAI(new OpenAI())`. For plain `fetch` calls to OpenAI, use `zoroval.wrapFetch()` as the `fetch`.
+   - Wrap the client: `const openai = zoroval.wrapOpenAI(new OpenAI())`. For plain `fetch` calls to OpenAI, use `zoroval.wrapFetch()` as the `fetch`; if the app calls OpenAI through its own base URL, pass `zoroval.wrapFetch(fetch, { baseURLs: [thatBase] })`.
    - For chat apps: `zoroval.conversation(chatId, () => zoroval.turn({ input }, async (turn) => { ...; turn.setOutput(answer); }))` around each chat turn, so one chat becomes one trace.
    - Send spans before the runtime stops. Long-running Node servers need nothing. Cloudflare Workers: `export default zoroval.withZoroval({ fetch })` (no `init()` needed), and add `nodejs_als` to `compatibility_flags` in `wrangler.toml` or `wrangler.jsonc`, or turns are not grouped into chats (this is a deploy file: show the diff first). Next.js routes: `after(() => zoroval.flush())`. Other Vercel functions: `waitUntil(zoroval.flush())` from `@vercel/functions`.
 5. Run `npx zoroval login`. With a `ZOROVAL_SETUP` value it connects on its own. Without one, ask the developer to open the printed link, sign in, check the code and approve. The key goes into a git-ignored file with mode 600: `.dev.vars` for a Worker, `.env.local` for Next.js, `.env` otherwise. If that file is not git-ignored, the command refuses: show the `.gitignore` diff, get a yes, run it again.
