@@ -16,8 +16,8 @@ You are helping a developer send their LLM app's traces to Zoroval. Follow these
 Use the SDK for the language of the code that calls the model. Do not choose by the other files in the repo: a Python app behind a Cloudflare Worker that only forwards requests is a Python service.
 
 - Python code calls OpenAI or Anthropic: follow **Steps (Python)**.
-- TypeScript or JavaScript code calls OpenAI (the `openai` package or `fetch`): follow **Steps (TypeScript)**. The npm package covers OpenAI; for another provider in TypeScript, tell the developer it is not covered yet and stop.
-- The Vercel AI SDK (`ai`): use case 6 of the setup skill.
+- TypeScript or JavaScript code calls OpenAI (the `openai` package or `fetch`): follow **Steps (TypeScript)**. The npm package wraps OpenAI.
+- The Vercel AI SDK (`ai`), or TypeScript or JavaScript code that calls another provider (for example Anthropic): use case 6 of the setup skill, the OpenTelemetry route. It needs no SDK.
 - Both languages: set up each service with its own SDK, one after the other. Do not install Python for a TypeScript service, or Node packages for a Python one.
 
 ## Steps (Python)

@@ -29,7 +29,7 @@ Add Zoroval beside your current tools. They keep working as before.
 | OpenLLMetry (Traceloop) | Keep it. Zoroval reads its spans. |
 | LangSmith | Runs beside it. |
 | TypeScript or JavaScript apps that call OpenAI | Use the npm package: `npm install zoroval`, then `npx zoroval login`. Works on Node.js, Next.js, Vercel and Cloudflare Workers. |
-| Vercel AI SDK | Send OpenTelemetry traces to Zoroval from `instrumentation.ts`. [get-started.md](https://github.com/Zoroval/zoroval-python/blob/main/get-started.md) shows how. |
+| Vercel AI SDK and other TypeScript providers | Send OpenTelemetry traces to Zoroval from `instrumentation.ts`. [get-started.md](https://github.com/Zoroval/zoroval-python/blob/main/get-started.md) shows how. |
 | gunicorn, uvicorn, Celery, serverless | Works with no extra setup. In serverless handlers, call `zoroval.flush()` at the end. |
 
 Your coding agent finds what you use and sets up the right path.

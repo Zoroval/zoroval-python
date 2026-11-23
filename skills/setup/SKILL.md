@@ -15,9 +15,9 @@ Use the SDK for the language of the code that calls the model, not for the repo'
 |---|---|---|
 | Python (OpenAI, Anthropic) | `pip install zoroval` | `zoroval detect\|login\|doctor\|logout` |
 | TypeScript or JavaScript (OpenAI through the `openai` package or `fetch`) | `npm install zoroval` | `npx zoroval detect\|login\|doctor\|logout` |
-| The Vercel AI SDK (`ai`) | no SDK, OpenTelemetry (case 6) | `npx zoroval login\|doctor` |
+| The Vercel AI SDK (`ai`), or TypeScript or JavaScript calling another provider | no SDK, OpenTelemetry (case 6) | `npx zoroval login\|doctor` |
 
-Both CLIs take the same flags and print the same report. Below, `zoroval <command>` means the one for the service you are working on, so a TypeScript service runs `npx zoroval <command>`. Never ask a TypeScript service to install Python, or a Python service to install Node packages. For several services, or both languages, set up each service with its own SDK (case 8). The npm package covers OpenAI; for another provider in TypeScript, tell the user it is not covered yet and do not wire it.
+Both CLIs print the same report and take the same commands. Flags match except the env file option: Python uses `--env-file`, TypeScript uses `--file` (Node intercepts `--env-file`). Below, `zoroval <command>` means the one for the service you are working on, so a TypeScript service runs `npx zoroval <command>`. Never ask a TypeScript service to install Python, or a Python service to install Node packages. For several services, or both languages, set up each service with its own SDK (case 8).
 
 ## Rules (never break these)
 
@@ -138,9 +138,9 @@ Detect: `langsmith`, `@traceable`, `LANGSMITH_*` or `LANGCHAIN_TRACING*` names.
 
 Do not edit unless the user asks. Explain: Zoroval runs beside LangSmith (case 1 changes, LangSmith untouched). For LangChain apps, add the OpenInference LangChain instrumentor so chain steps reach Zoroval.
 
-### 6. Vercel AI SDK (TypeScript)
+### 6. Vercel AI SDK or another TypeScript provider
 
-Detect: `package.json` with `ai` or `@vercel/otel`. A TypeScript app that only calls OpenAI directly is case 1, even if it has `@opentelemetry/*` packages.
+Detect: `package.json` with `ai` or `@vercel/otel`, or TypeScript or JavaScript code that calls a provider other than OpenAI. A TypeScript app that only calls OpenAI directly is case 1, even if it has `@opentelemetry/*` packages.
 
 Change: send OTLP to Zoroval from `instrumentation.ts`, with the key read from the environment:
 
