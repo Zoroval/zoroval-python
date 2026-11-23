@@ -20,6 +20,7 @@ from opentelemetry import trace as otel_trace
 from opentelemetry.trace import SpanKind
 
 from .. import _context, _json, _state
+from .._json import apply_redact
 from .._util import internal_error
 from .._version import SCOPE_NAME
 
@@ -170,11 +171,22 @@ class Generation:
             if output_messages:
                 _context.set_content(span, "gen_ai.output.messages", output_messages)
             if tool_calls:
-                calls = [{"id": c.get("id"), "name": c.get("name"),
-                          **({"arguments": c.get("arguments")} if _context.content_allowed(span)
-                             and c.get("arguments") is not None else {})}
-                         for c in tool_calls]
+                allowed = _context.content_allowed(span)
                 state = _state.get()
+                redact = state.cfg.redact if state else None
+                redacted = False
+                calls = []
+                for c in tool_calls:
+                    call = {"id": c.get("id"), "name": c.get("name")}
+                    arguments = c.get("arguments")
+                    if allowed and arguments is not None:
+                        arguments, changed, ok = apply_redact(redact, arguments)
+                        redacted = redacted or changed
+                        if ok:
+                            call["arguments"] = arguments
+                    calls.append(call)
+                if redacted:
+                    span.set_attribute(_context.REDACTED, True)
                 limit = state.cfg.max_content_bytes if state else 1 << 20
                 text, cut = _json.fit(_json.dumps(calls), limit)
                 span.set_attribute("zoroval.tool_calls", text)
