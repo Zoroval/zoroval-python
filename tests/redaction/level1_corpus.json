@@ -1,0 +1,1395 @@
+{
+  "about": [
+    "Shared test corpus for level-1 redaction. must_redact: applying the rules to text must give expect",
+    "exactly. must_keep: applying the rules must return text unchanged. Card and Aadhaar samples are made",
+    "up and only pass their check digits; phone numbers are examples. Secret samples are obviously fake.",
+    "values_must_redact and values_must_keep: walk the JSON value (object keys are context, see the rules",
+    "file); the result must equal expect, or the value unchanged. Integers above 2^53 lose precision in",
+    "JavaScript; compare them after parsing."
+  ],
+  "must_redact": [
+    {
+      "id": "card_visa_spaces",
+      "text": "My card is 4111 1111 1111 1111, expiry 08/29.",
+      "expect": "My card is [CARD], expiry 08/29."
+    },
+    {
+      "id": "card_visa_dashes",
+      "text": "card: 4111-1111-1111-1111",
+      "expect": "card: [CARD]"
+    },
+    {
+      "id": "card_visa_plain",
+      "text": "pay with 4111111111111111 please",
+      "expect": "pay with [CARD] please"
+    },
+    {
+      "id": "card_mastercard",
+      "text": "Mastercard 5555 5555 5555 4444",
+      "expect": "Mastercard [CARD]"
+    },
+    {
+      "id": "card_mastercard_2series",
+      "text": "MC 2223003122003222",
+      "expect": "MC [CARD]"
+    },
+    {
+      "id": "card_amex_4_6_5",
+      "text": "Amex 3782 822463 10005",
+      "expect": "Amex [CARD]"
+    },
+    {
+      "id": "card_amex_plain",
+      "text": "amex=378282246310005",
+      "expect": "amex=[CARD]"
+    },
+    {
+      "id": "card_discover",
+      "text": "Discover 6011 1111 1111 1117",
+      "expect": "Discover [CARD]"
+    },
+    {
+      "id": "card_jcb",
+      "text": "JCB 3530111333300000",
+      "expect": "JCB [CARD]"
+    },
+    {
+      "id": "card_diners_4_6_4",
+      "text": "Diners 3056 930902 5904",
+      "expect": "Diners [CARD]"
+    },
+    {
+      "id": "card_rupay",
+      "text": "RuPay card 6521 2002 9772 7698 se payment karo",
+      "expect": "RuPay card [CARD] se payment karo"
+    },
+    {
+      "id": "card_rupay_607",
+      "text": "RuPay 6070310980274083",
+      "expect": "RuPay [CARD]"
+    },
+    {
+      "id": "card_visa_19_digits",
+      "text": "card 4594118427853494450",
+      "expect": "card [CARD]"
+    },
+    {
+      "id": "card_visa_19_grouped",
+      "text": "card 4594 1184 2785 3494 450",
+      "expect": "card [CARD]"
+    },
+    {
+      "id": "card_visa_13_digits",
+      "text": "old card 4222222222222",
+      "expect": "old card [CARD]"
+    },
+    {
+      "id": "card_unionpay_17",
+      "text": "UnionPay 62928504020487674",
+      "expect": "UnionPay [CARD]"
+    },
+    {
+      "id": "card_line_break",
+      "text": "card 4111 1111\n1111 1111",
+      "expect": "card [CARD]"
+    },
+    {
+      "id": "card_crlf",
+      "text": "card 4111 1111\r\n1111 1111",
+      "expect": "card [CARD]"
+    },
+    {
+      "id": "card_full_width",
+      "text": "カード ４１１１ １１１１ １１１１ １１１１ です",
+      "expect": "カード [CARD] です"
+    },
+    {
+      "id": "card_zero_width",
+      "text": "card 4111​1111​1111​1111",
+      "expect": "card [CARD]"
+    },
+    {
+      "id": "card_nbsp",
+      "text": "card 4111 1111 1111 1111",
+      "expect": "card [CARD]"
+    },
+    {
+      "id": "card_en_dash",
+      "text": "card 4111–1111–1111–1111",
+      "expect": "card [CARD]"
+    },
+    {
+      "id": "card_devanagari_digits",
+      "text": "मेरा कार्ड ४१११ ११११ ११११ ११११ है",
+      "expect": "मेरा कार्ड [CARD] है"
+    },
+    {
+      "id": "card_in_hindi",
+      "text": "कृपया इस कार्ड से भुगतान करें: 5555 5555 5555 4444 धन्यवाद",
+      "expect": "कृपया इस कार्ड से भुगतान करें: [CARD] धन्यवाद"
+    },
+    {
+      "id": "card_in_json_string",
+      "text": "{\"card_number\":\"4111111111111111\",\"cvv\":\"123\"}",
+      "expect": "{\"card_number\":\"[CARD]\",\"cvv\":\"123\"}"
+    },
+    {
+      "id": "card_after_order_word",
+      "text": "pay order 1234 with card 4111 1111 1111 1111",
+      "expect": "pay order 1234 with card [CARD]"
+    },
+    {
+      "id": "card_two_in_line",
+      "text": "4111111111111111 and 5555555555554444",
+      "expect": "[CARD] and [CARD]"
+    },
+    {
+      "id": "card_rtl_arabic",
+      "text": "رقم البطاقة 4111 1111 1111 1111 شكرا",
+      "expect": "رقم البطاقة [CARD] شكرا"
+    },
+    {
+      "id": "card_emoji",
+      "text": "💳 4111 1111 1111 1111 ✅",
+      "expect": "💳 [CARD] ✅"
+    },
+    {
+      "id": "email_plain",
+      "text": "Write to priya.sharma@gmail.com today",
+      "expect": "Write to [EMAIL] today"
+    },
+    {
+      "id": "email_plus_tag",
+      "text": "rahul_k+orders@company.co.in",
+      "expect": "[EMAIL]"
+    },
+    {
+      "id": "email_upper",
+      "text": "MAILTO:A.B@EXAMPLE.ORG",
+      "expect": "MAILTO:[EMAIL]"
+    },
+    {
+      "id": "email_html",
+      "text": "<a href=\"mailto:x@y.io\">mail</a>",
+      "expect": "<a href=\"mailto:[EMAIL]\">mail</a>"
+    },
+    {
+      "id": "email_subdomains",
+      "text": "first.last@mail.eu.example.museum.",
+      "expect": "[EMAIL]."
+    },
+    {
+      "id": "email_hindi",
+      "text": "उपयोगकर्ता का ईमेल ravi@example.in है",
+      "expect": "उपयोगकर्ता का ईमेल [EMAIL] है"
+    },
+    {
+      "id": "email_tamil",
+      "text": "என் மின்னஞ்சல் kumar.s@example.com ஆகும்",
+      "expect": "என் மின்னஞ்சல் [EMAIL] ஆகும்"
+    },
+    {
+      "id": "email_full_width_at",
+      "text": "user＠example.com",
+      "expect": "[EMAIL]"
+    },
+    {
+      "id": "email_full_width_all",
+      "text": "ｕｓｅｒ＠ｅｘａｍｐｌｅ．ｃｏｍ",
+      "expect": "[EMAIL]"
+    },
+    {
+      "id": "email_in_json",
+      "text": "{\"to\": [\"a@b.co\", \"c.d@e.org\"]}",
+      "expect": "{\"to\": [\"[EMAIL]\", \"[EMAIL]\"]}"
+    },
+    {
+      "id": "email_angle",
+      "text": "Priya <priya@example.com>",
+      "expect": "Priya <[EMAIL]>"
+    },
+    {
+      "id": "email_rtl",
+      "text": "البريد ali@example.ae شكرا",
+      "expect": "البريد [EMAIL] شكرا"
+    },
+    {
+      "id": "email_digits_local",
+      "text": "9876543210@paytm.com",
+      "expect": "[EMAIL]"
+    },
+    {
+      "id": "phone_in_plus_space",
+      "text": "Call +91 98765 43210 now",
+      "expect": "Call [PHONE] now"
+    },
+    {
+      "id": "phone_in_plus_dash",
+      "text": "+91-98765-43210",
+      "expect": "[PHONE]"
+    },
+    {
+      "id": "phone_in_plus_plain",
+      "text": "+919876543210",
+      "expect": "[PHONE]"
+    },
+    {
+      "id": "phone_in_bare",
+      "text": "my number is 9876543210",
+      "expect": "my number is [PHONE]"
+    },
+    {
+      "id": "phone_in_5_5",
+      "text": "WhatsApp 98765 43210",
+      "expect": "WhatsApp [PHONE]"
+    },
+    {
+      "id": "phone_in_3_3_4",
+      "text": "call 987-654-3210",
+      "expect": "call [PHONE]"
+    },
+    {
+      "id": "phone_in_zero_prefix",
+      "text": "mobile: 098765 43210",
+      "expect": "mobile: [PHONE]"
+    },
+    {
+      "id": "phone_in_91_prefix",
+      "text": "contact 91 98765 43210",
+      "expect": "contact [PHONE]"
+    },
+    {
+      "id": "phone_in_call_me_on",
+      "text": "call me on 98765 43210",
+      "expect": "call me on [PHONE]"
+    },
+    {
+      "id": "phone_in_my_number_is",
+      "text": "my number is 9876543210",
+      "expect": "my number is [PHONE]"
+    },
+    {
+      "id": "phone_in_plus91_no_space",
+      "text": "+91 9876543210",
+      "expect": "[PHONE]"
+    },
+    {
+      "id": "phone_in_ph_no",
+      "text": "Ph. no. 9876543210",
+      "expect": "Ph. no. [PHONE]"
+    },
+    {
+      "id": "phone_in_tel",
+      "text": "tel:9876543210",
+      "expect": "tel:[PHONE]"
+    },
+    {
+      "id": "phone_in_mera_number",
+      "text": "bhai mera number 9876543210 hai",
+      "expect": "bhai mera number [PHONE] hai"
+    },
+    {
+      "id": "phone_in_hindi_mobile",
+      "text": "मोबाइल नंबर 9876543210",
+      "expect": "मोबाइल नंबर [PHONE]"
+    },
+    {
+      "id": "phone_in_paren",
+      "text": "(+91) 98765-43210",
+      "expect": "([PHONE]"
+    },
+    {
+      "id": "phone_in_hindi",
+      "text": "मेरा नंबर 9876543210 है",
+      "expect": "मेरा नंबर [PHONE] है"
+    },
+    {
+      "id": "phone_in_devanagari_digits",
+      "text": "मेरा नंबर ९८७६५४३२१० है",
+      "expect": "मेरा नंबर [PHONE] है"
+    },
+    {
+      "id": "phone_in_tamil",
+      "text": "என் எண் 98765 43210",
+      "expect": "என் எண் [PHONE]"
+    },
+    {
+      "id": "phone_in_tamil_digits",
+      "text": "என் எண் ௯௮௭௬௫௪௩௨௧௦",
+      "expect": "என் எண் [PHONE]"
+    },
+    {
+      "id": "phone_in_full_width",
+      "text": "phone ９８７６５４３２１０",
+      "expect": "phone [PHONE]"
+    },
+    {
+      "id": "phone_in_json",
+      "text": "{\"phone\":\"9123456789\"}",
+      "expect": "{\"phone\":\"[PHONE]\"}"
+    },
+    {
+      "id": "phone_in_query",
+      "text": "?phone=8123456789&x=1",
+      "expect": "?phone=[PHONE]&x=1"
+    },
+    {
+      "id": "phone_us",
+      "text": "+1 (415) 555-2671",
+      "expect": "[PHONE]"
+    },
+    {
+      "id": "phone_uk",
+      "text": "+44 20 7946 0958",
+      "expect": "[PHONE]"
+    },
+    {
+      "id": "phone_uae",
+      "text": "+971 50 123 4567",
+      "expect": "[PHONE]"
+    },
+    {
+      "id": "phone_sg_dots",
+      "text": "+65.6123.4567",
+      "expect": "[PHONE]"
+    },
+    {
+      "id": "phone_full_width_plus",
+      "text": "＋91 98765 43210",
+      "expect": "[PHONE]"
+    },
+    {
+      "id": "phone_emoji",
+      "text": "📞 +91 98765 43210",
+      "expect": "📞 [PHONE]"
+    },
+    {
+      "id": "aadhaar_spaces",
+      "text": "Aadhaar 8986 3532 1372",
+      "expect": "Aadhaar [AADHAAR]"
+    },
+    {
+      "id": "aadhaar_plain",
+      "text": "aadhaar no 831629667174",
+      "expect": "aadhaar no [AADHAAR]"
+    },
+    {
+      "id": "aadhaar_dashes",
+      "text": "UID: 2769-1073-8576",
+      "expect": "UID: [AADHAAR]"
+    },
+    {
+      "id": "aadhaar_hindi",
+      "text": "मेरा आधार नंबर 8986 3532 1372 है",
+      "expect": "मेरा आधार नंबर [AADHAAR] है"
+    },
+    {
+      "id": "aadhaar_devanagari_digits",
+      "text": "आधार ८३१६ २९६६ ७१७४",
+      "expect": "आधार [AADHAAR]"
+    },
+    {
+      "id": "aadhaar_tamil",
+      "text": "ஆதார் எண் 2769 1073 8576",
+      "expect": "ஆதார் எண் [AADHAAR]"
+    },
+    {
+      "id": "aadhaar_json",
+      "text": "{\"aadhaar\":\"898635321372\"}",
+      "expect": "{\"aadhaar\":\"[AADHAAR]\"}"
+    },
+    {
+      "id": "aadhaar_line_break",
+      "text": "Aadhaar 8316 2966\n7174",
+      "expect": "Aadhaar [AADHAAR]"
+    },
+    {
+      "id": "pan_person",
+      "text": "PAN: ABCPE1234F",
+      "expect": "PAN: [PAN]"
+    },
+    {
+      "id": "pan_company",
+      "text": "company PAN AAACR5055K",
+      "expect": "company PAN [PAN]"
+    },
+    {
+      "id": "pan_lower",
+      "text": "pan abcpe1234f",
+      "expect": "pan [PAN]"
+    },
+    {
+      "id": "pan_full_width",
+      "text": "ＡＢＣＰＥ１２３４Ｆ",
+      "expect": "[PAN]"
+    },
+    {
+      "id": "pan_hindi",
+      "text": "पैन कार्ड ABCPE1234F है",
+      "expect": "पैन कार्ड [PAN] है"
+    },
+    {
+      "id": "secret_openai",
+      "text": "OPENAI_API_KEY=sk-proj-EXAMPLE0000000000000000000000000000000000000000",
+      "expect": "OPENAI_API_KEY=[SECRET]"
+    },
+    {
+      "id": "secret_anthropic",
+      "text": "key sk-ant-api03-EXAMPLE0000000000000000000000000000000000000000 end",
+      "expect": "key [SECRET] end"
+    },
+    {
+      "id": "secret_stripe",
+      "text": "stripe sk_live_EXAMPLE000000000",
+      "expect": "stripe [SECRET]"
+    },
+    {
+      "id": "secret_github",
+      "text": "token: ghp_EXAMPLE00000000000000000000000000000",
+      "expect": "token: [SECRET]"
+    },
+    {
+      "id": "secret_aws",
+      "text": "AKIAIOSFODNN7EXAMPLE",
+      "expect": "[SECRET]"
+    },
+    {
+      "id": "secret_slack",
+      "text": "xoxb-EXAMPLE-EXAMPLE-EXAMPLE",
+      "expect": "[SECRET]"
+    },
+    {
+      "id": "secret_google",
+      "text": "key=AIzaEXAMPLE0000000000000000000000000000",
+      "expect": "key=[SECRET]"
+    },
+    {
+      "id": "secret_jwt",
+      "text": "token eyJhbGciOiJub25lIn0.eyJzdWIiOiJFWEFNUExFIn0.EXAMPLE",
+      "expect": "token [SECRET]"
+    },
+    {
+      "id": "secret_bearer",
+      "text": "Authorization: Bearer abcDEF123456ghiJKL789012",
+      "expect": "Authorization: Bearer [SECRET]"
+    },
+    {
+      "id": "secret_basic",
+      "text": "Authorization: Basic dXNlcjpwYXNzd29yZDEyMw==",
+      "expect": "Authorization: Basic [SECRET]"
+    },
+    {
+      "id": "secret_zoroval",
+      "text": "ZOROVAL_INGEST_KEY=zv_ingest_abcdefghijkl_QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ",
+      "expect": "ZOROVAL_INGEST_KEY=[SECRET]"
+    },
+    {
+      "id": "secret_razorpay",
+      "text": "rzp key rzp_test_EXAMPLE0000000",
+      "expect": "rzp key [SECRET]"
+    },
+    {
+      "id": "secret_pem",
+      "text": "key:\n-----BEGIN RSA PRIVATE KEY-----\nEXAMPLEEXAMPLEEXAMPLE\nEXAMPLEEXAMPLE\n-----END RSA PRIVATE KEY-----\nend",
+      "expect": "key:\n[SECRET]\nend"
+    },
+    {
+      "id": "secret_json_args",
+      "text": "{\"headers\": {\"Authorization\": \"Bearer sk-proj-EXAMPLE0000000000000000000000000000000000000000\"}}",
+      "expect": "{\"headers\": {\"Authorization\": \"Bearer [SECRET]\"}}"
+    },
+    {
+      "id": "mixed_support_chat",
+      "text": "Hi, I am Priya. Email priya@example.com, phone +91 98765 43210, card 4111 1111 1111 1111, PAN ABCPE1234F.",
+      "expect": "Hi, I am Priya. Email [EMAIL], phone [PHONE], card [CARD], PAN [PAN]."
+    },
+    {
+      "id": "mixed_hinglish",
+      "text": "bhai mera number 9876543210 hai aur aadhaar 8986 3532 1372",
+      "expect": "bhai mera number [PHONE] hai aur aadhaar [AADHAAR]"
+    }
+  ],
+  "must_keep": [
+    {
+      "id": "amazon_order",
+      "kind": "order_id",
+      "text": "Order #403-5926381-7740324 has shipped"
+    },
+    {
+      "id": "flipkart_order",
+      "kind": "order_id",
+      "text": "Flipkart order OD432158976543210987 delivered"
+    },
+    {
+      "id": "swiggy_order",
+      "kind": "order_id",
+      "text": "Your Swiggy order 163845729301 is on the way"
+    },
+    {
+      "id": "order_id_phone_shape",
+      "kind": "order_id",
+      "text": "Order ID 9876543210 confirmed"
+    },
+    {
+      "id": "order_no_phone_shape",
+      "kind": "order_id",
+      "text": "order no. 8123456789"
+    },
+    {
+      "id": "order_hash_phone_shape",
+      "kind": "order_id",
+      "text": "Order #7123456789"
+    },
+    {
+      "id": "order_dash_prefix",
+      "kind": "order_id",
+      "text": "ORD-9876543210"
+    },
+    {
+      "id": "order_aadhaar_shape",
+      "kind": "order_id",
+      "text": "Order number: 898635321372"
+    },
+    {
+      "id": "invoice_dashed",
+      "kind": "invoice",
+      "text": "Invoice INV-2026-000123 for Rs 4,999"
+    },
+    {
+      "id": "invoice_phone_shape",
+      "kind": "invoice",
+      "text": "Invoice No. 9876543210 raised"
+    },
+    {
+      "id": "bill_number",
+      "kind": "invoice",
+      "text": "Bill no: 7012345678"
+    },
+    {
+      "id": "receipt",
+      "kind": "invoice",
+      "text": "receipt 6123456789 paid"
+    },
+    {
+      "id": "irctc_pnr",
+      "kind": "pnr",
+      "text": "PNR 8524136790 is confirmed, coach S4 berth 32"
+    },
+    {
+      "id": "irctc_pnr_colon",
+      "kind": "pnr",
+      "text": "PNR: 6524136790"
+    },
+    {
+      "id": "irctc_pnr_is",
+      "kind": "pnr",
+      "text": "my pnr is 9524136790"
+    },
+    {
+      "id": "airline_pnr",
+      "kind": "pnr",
+      "text": "Booking ref XJ4K2P, flight 6E 2134 BLR-DEL"
+    },
+    {
+      "id": "booking_id",
+      "kind": "pnr",
+      "text": "Booking ID: 8812345678"
+    },
+    {
+      "id": "flight_numbers",
+      "kind": "flight",
+      "text": "AI 302, UK 955, 6E-6123 and EK 501 are delayed"
+    },
+    {
+      "id": "fedex_tracking",
+      "kind": "tracking",
+      "text": "FedEx tracking 831629667174"
+    },
+    {
+      "id": "tracking_number",
+      "kind": "tracking",
+      "text": "Tracking number: 789456123012"
+    },
+    {
+      "id": "awb_delhivery",
+      "kind": "tracking",
+      "text": "AWB 1490815234567 out for delivery"
+    },
+    {
+      "id": "awb_phone_shape",
+      "kind": "tracking",
+      "text": "AWB no 7834567890"
+    },
+    {
+      "id": "ups_tracking",
+      "kind": "tracking",
+      "text": "UPS 1Z999AA10123456784"
+    },
+    {
+      "id": "usps_tracking",
+      "kind": "tracking",
+      "text": "USPS 9400 1000 0000 0000 0000 00"
+    },
+    {
+      "id": "consignment",
+      "kind": "tracking",
+      "text": "Consignment no. 8765432109"
+    },
+    {
+      "id": "utr",
+      "kind": "payment_ref",
+      "text": "UTR 912345678901 credited"
+    },
+    {
+      "id": "upi_txn",
+      "kind": "payment_ref",
+      "text": "UPI transaction id 412345678901"
+    },
+    {
+      "id": "rrn",
+      "kind": "payment_ref",
+      "text": "RRN: 612345678901"
+    },
+    {
+      "id": "ticket_id",
+      "kind": "ticket",
+      "text": "Ticket #8901234567 closed"
+    },
+    {
+      "id": "uuid4",
+      "kind": "uuid",
+      "text": "ffa3bda6-248e-40b3-abc7-82392a832340"
+    },
+    {
+      "id": "uuid_digits",
+      "kind": "uuid",
+      "text": "12345678-1234-4234-8234-123456789012"
+    },
+    {
+      "id": "uuid_card_like",
+      "kind": "uuid",
+      "text": "41111111-1111-4111-9111-111111111111"
+    },
+    {
+      "id": "trace_id",
+      "kind": "trace_id",
+      "text": "trace_id=4bf92f3577b34da6a3ce929d0e0e4736 span_id=00f067aa0ba902b7"
+    },
+    {
+      "id": "traceparent",
+      "kind": "trace_id",
+      "text": "traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+    },
+    {
+      "id": "git_sha",
+      "kind": "hash",
+      "text": "commit 3f9a2c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39"
+    },
+    {
+      "id": "sha256",
+      "kind": "hash",
+      "text": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+    },
+    {
+      "id": "gstin",
+      "kind": "business_id",
+      "text": "GSTIN 29ABCPE1234F1Z5"
+    },
+    {
+      "id": "ifsc",
+      "kind": "business_id",
+      "text": "IFSC HDFC0001234"
+    },
+    {
+      "id": "vehicle",
+      "kind": "business_id",
+      "text": "Vehicle KA 01 AB 1234 and MH12DE1433"
+    },
+    {
+      "id": "pincode",
+      "kind": "address_part",
+      "text": "Bengaluru 560001"
+    },
+    {
+      "id": "upi_handle",
+      "kind": "upi",
+      "text": "Pay to priya@okhdfcbank"
+    },
+    {
+      "id": "masked_card",
+      "kind": "masked",
+      "text": "Card XXXX XXXX XXXX 1234 and **** 4242"
+    },
+    {
+      "id": "masked_aadhaar",
+      "kind": "masked",
+      "text": "Aadhaar XXXX XXXX 5678"
+    },
+    {
+      "id": "card_bad_luhn",
+      "kind": "near_miss",
+      "text": "card 4111 1111 1111 1112"
+    },
+    {
+      "id": "aadhaar_bad_verhoeff",
+      "kind": "near_miss",
+      "text": "aadhaar 8986 3532 1373"
+    },
+    {
+      "id": "aadhaar_starts_1",
+      "kind": "near_miss",
+      "text": "1234 5678 9012"
+    },
+    {
+      "id": "mention",
+      "kind": "handle",
+      "text": "@zoroval and @types/node and @app.route('/x')"
+    },
+    {
+      "id": "isbn",
+      "kind": "book",
+      "text": "ISBN 978-3-16-148410-0 and 9783161484100"
+    },
+    {
+      "id": "toll_free",
+      "kind": "business_phone",
+      "text": "Customer care 1800 123 4567"
+    },
+    {
+      "id": "iso_timestamp",
+      "kind": "timestamp",
+      "text": "2026-11-24T10:30:00.000Z"
+    },
+    {
+      "id": "timestamp_offset",
+      "kind": "timestamp",
+      "text": "2026-11-24 10:30:00+05:30"
+    },
+    {
+      "id": "epoch_seconds",
+      "kind": "timestamp",
+      "text": "created_at=1764000000"
+    },
+    {
+      "id": "epoch_ms",
+      "kind": "timestamp",
+      "text": "ts 1764000000000"
+    },
+    {
+      "id": "epoch_ms_json",
+      "kind": "timestamp",
+      "text": "{\"ts\": 1764000123456, \"id\": 17640001234567890}"
+    },
+    {
+      "id": "dates",
+      "kind": "timestamp",
+      "text": "24/11/2026, 11-24-2026, Nov 24, 2026 10:30 AM IST"
+    },
+    {
+      "id": "utc_offset",
+      "kind": "timestamp",
+      "text": "UTC+05:30 and GMT+5"
+    },
+    {
+      "id": "rupees_lakh",
+      "kind": "price",
+      "text": "₹1,29,999.00 incl. 18% GST"
+    },
+    {
+      "id": "rupees_text",
+      "kind": "price",
+      "text": "Rs. 4,999 only"
+    },
+    {
+      "id": "dollars",
+      "kind": "price",
+      "text": "$1,299.99 and USD 12345678.50"
+    },
+    {
+      "id": "euro",
+      "kind": "price",
+      "text": "€ 49,90"
+    },
+    {
+      "id": "crore",
+      "kind": "price",
+      "text": "₹12,34,56,789"
+    },
+    {
+      "id": "price_delta",
+      "kind": "price",
+      "text": "+12.5% and +5 points and +1,234"
+    },
+    {
+      "id": "hindi_price",
+      "kind": "price",
+      "text": "कुल 3 आइटम, कीमत ₹1,299"
+    },
+    {
+      "id": "tamil_age",
+      "kind": "price",
+      "text": "நான் 25 வயது, விலை ₹450"
+    },
+    {
+      "id": "semver",
+      "kind": "version",
+      "text": "1.2.3 and v2.10.0-beta.1+build.20261124"
+    },
+    {
+      "id": "python_version",
+      "kind": "version",
+      "text": "Python 3.12.4 on node v22.11.0"
+    },
+    {
+      "id": "model_ids",
+      "kind": "version",
+      "text": "gpt-4o-2024-08-06, claude-3-5-sonnet-20241022, gemini-1.5-pro-002"
+    },
+    {
+      "id": "ip_addresses",
+      "kind": "ip",
+      "text": "192.168.1.10, 10.0.0.255 and 2001:db8::1"
+    },
+    {
+      "id": "coordinates",
+      "kind": "geo",
+      "text": "12.9716, 77.5946"
+    },
+    {
+      "id": "decimal_long",
+      "kind": "number",
+      "text": "pi is 3.9876543210 approx"
+    },
+    {
+      "id": "sk_words",
+      "kind": "words",
+      "text": "sk-learn, task-1234567890abcdefghijk, desk-lamp, risk-free"
+    },
+    {
+      "id": "akia_word",
+      "kind": "words",
+      "text": "AKIA is not a key on its own"
+    },
+    {
+      "id": "bearer_short",
+      "kind": "words",
+      "text": "Bearer token expired"
+    },
+    {
+      "id": "eyj_word",
+      "kind": "words",
+      "text": "eyJ alone is not a JWT"
+    },
+    {
+      "id": "emoji_text",
+      "kind": "words",
+      "text": "🙂🙏🏽 नमस्ते வணக்கம் مرحبا"
+    },
+    {
+      "id": "table_numbers",
+      "kind": "number",
+      "text": "12345 98765 43210 55555"
+    },
+    {
+      "id": "long_number",
+      "kind": "number",
+      "text": "id 98765432101234567890123"
+    },
+    {
+      "id": "quantity_list",
+      "kind": "number",
+      "text": "Qty: 1, 2, 3, 98, 765"
+    },
+    {
+      "id": "bare_10_digits",
+      "kind": "bare_number",
+      "text": "8123456789"
+    },
+    {
+      "id": "bare_10_digits_in_text",
+      "kind": "bare_number",
+      "text": "ref 9876543210 was updated"
+    },
+    {
+      "id": "bare_zero_prefix",
+      "kind": "bare_number",
+      "text": "098765 43210"
+    },
+    {
+      "id": "bare_91_prefix",
+      "kind": "bare_number",
+      "text": "91 98765 43210"
+    },
+    {
+      "id": "bare_3_3_4",
+      "kind": "bare_number",
+      "text": "987-654-3210"
+    },
+    {
+      "id": "hindi_order_number",
+      "kind": "order_id",
+      "text": "ऑर्डर नंबर 9876543210"
+    },
+    {
+      "id": "tamil_order_number",
+      "kind": "order_id",
+      "text": "ஆர்டர் எண் 9876543210"
+    },
+    {
+      "id": "phone_word_far_away",
+      "kind": "bare_number",
+      "text": "call us later, the code is 9876543210"
+    },
+    {
+      "id": "json_string_pnr",
+      "kind": "pnr",
+      "text": "{\"pnr\":\"8123456789\"}"
+    },
+    {
+      "id": "json_string_order_id",
+      "kind": "order_id",
+      "text": "{\"order_id\": \"234567890124\"}"
+    },
+    {
+      "id": "python_call_pnr",
+      "kind": "pnr",
+      "text": "get_booking(pnr=\"8123456789\")"
+    },
+    {
+      "id": "python_call_single_quotes",
+      "kind": "pnr",
+      "text": "get_booking(pnr='8123456789', awb='7834567890')"
+    },
+    {
+      "id": "query_pnr",
+      "kind": "pnr",
+      "text": "pnr=8123456789"
+    },
+    {
+      "id": "camel_case_text",
+      "kind": "order_id",
+      "text": "orderId: \"9876543210\""
+    },
+    {
+      "id": "amount_paise_text",
+      "kind": "price",
+      "text": "amount_paise=9876543210"
+    },
+    {
+      "id": "amount_cents_text",
+      "kind": "price",
+      "text": "amount 9876543210 cents"
+    },
+    {
+      "id": "epoch_s_string",
+      "kind": "timestamp",
+      "text": "\"1764000000\""
+    },
+    {
+      "id": "epoch_ms_string",
+      "kind": "timestamp",
+      "text": "\"1764000000123\""
+    },
+    {
+      "id": "epoch_us_string",
+      "kind": "timestamp",
+      "text": "\"1764000000123456\""
+    },
+    {
+      "id": "epoch_ns_string",
+      "kind": "timestamp",
+      "text": "\"1764000000123456789\""
+    }
+  ],
+  "values_must_redact": [
+    {
+      "id": "key_user_phone",
+      "value": {
+        "user_phone": "9876543210"
+      },
+      "expect": {
+        "user_phone": "[PHONE]"
+      }
+    },
+    {
+      "id": "key_phone",
+      "value": {
+        "phone": "9876543210"
+      },
+      "expect": {
+        "phone": "[PHONE]"
+      }
+    },
+    {
+      "id": "int_phone",
+      "value": {
+        "phone": 9876543210
+      },
+      "expect": {
+        "phone": "[PHONE]"
+      }
+    },
+    {
+      "id": "int_mobile_number",
+      "value": {
+        "mobileNumber": 9123456789
+      },
+      "expect": {
+        "mobileNumber": "[PHONE]"
+      }
+    },
+    {
+      "id": "int_whatsapp",
+      "value": {
+        "whatsapp": 919876543210
+      },
+      "expect": {
+        "whatsapp": "[PHONE]"
+      }
+    },
+    {
+      "id": "key_notes_phone",
+      "value": {
+        "notes": "call 9876543210"
+      },
+      "expect": {
+        "notes": "call [PHONE]"
+      }
+    },
+    {
+      "id": "key_order_text_phone",
+      "value": {
+        "order_id": "order for phone 9876543210"
+      },
+      "expect": {
+        "order_id": "order for phone [PHONE]"
+      }
+    },
+    {
+      "id": "key_phone_number",
+      "value": {
+        "phone_number": "9876543210"
+      },
+      "expect": {
+        "phone_number": "[PHONE]"
+      }
+    },
+    {
+      "id": "key_contact",
+      "value": {
+        "contact": "98765 43210"
+      },
+      "expect": {
+        "contact": "[PHONE]"
+      }
+    },
+    {
+      "id": "key_whatsapp",
+      "value": {
+        "whatsapp": "9876543210"
+      },
+      "expect": {
+        "whatsapp": "[PHONE]"
+      }
+    },
+    {
+      "id": "key_card",
+      "value": {
+        "card": "4111111111111111"
+      },
+      "expect": {
+        "card": "[CARD]"
+      }
+    },
+    {
+      "id": "key_aadhaar",
+      "value": {
+        "aadhaar": "276910738576"
+      },
+      "expect": {
+        "aadhaar": "[AADHAAR]"
+      }
+    },
+    {
+      "id": "tool_args_mixed",
+      "value": {
+        "name": "create_ticket",
+        "arguments": {
+          "email": "priya@example.com",
+          "pnr": "8123456789",
+          "phone": "+91 98765 43210"
+        }
+      },
+      "expect": {
+        "name": "create_ticket",
+        "arguments": {
+          "email": "[EMAIL]",
+          "pnr": "8123456789",
+          "phone": "[PHONE]"
+        }
+      }
+    },
+    {
+      "id": "messages",
+      "value": [
+        {
+          "role": "user",
+          "content": "my number is 9876543210"
+        }
+      ],
+      "expect": [
+        {
+          "role": "user",
+          "content": "my number is [PHONE]"
+        }
+      ]
+    },
+    {
+      "id": "phones_list",
+      "value": {
+        "phones": [
+          "9876543210",
+          "+44 20 7946 0958"
+        ]
+      },
+      "expect": {
+        "phones": [
+          "[PHONE]",
+          "[PHONE]"
+        ]
+      }
+    }
+  ],
+  "values_must_keep": [
+    {
+      "id": "key_pnr_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "pnr": "8123456789"
+      }
+    },
+    {
+      "id": "key_PNR_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "PNR": "8123456789"
+      }
+    },
+    {
+      "id": "key_order_id_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "order_id": "8123456789"
+      }
+    },
+    {
+      "id": "key_orderId_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "orderId": "8123456789"
+      }
+    },
+    {
+      "id": "key_booking_ref_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "booking_ref": "8123456789"
+      }
+    },
+    {
+      "id": "key_bookingRef_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "bookingRef": "8123456789"
+      }
+    },
+    {
+      "id": "key_tracking_number_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "tracking_number": "8123456789"
+      }
+    },
+    {
+      "id": "key_trackingNumber_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "trackingNumber": "8123456789"
+      }
+    },
+    {
+      "id": "key_awb_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "awb": "8123456789"
+      }
+    },
+    {
+      "id": "key_awb_no_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "awb_no": "8123456789"
+      }
+    },
+    {
+      "id": "key_invoice_no_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "invoice_no": "8123456789"
+      }
+    },
+    {
+      "id": "key_invoiceNumber_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "invoiceNumber": "8123456789"
+      }
+    },
+    {
+      "id": "key_consignment_no_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "consignment_no": "8123456789"
+      }
+    },
+    {
+      "id": "key_utr_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "utr": "8123456789"
+      }
+    },
+    {
+      "id": "key_ticket_id_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "ticket_id": "8123456789"
+      }
+    },
+    {
+      "id": "key_order_id_aadhaar_shape",
+      "kind": "key_context",
+      "value": {
+        "order_id": "898635321372"
+      }
+    },
+    {
+      "id": "key_tracking_aadhaar_shape",
+      "kind": "key_context",
+      "value": {
+        "tracking_number": "831629667174"
+      }
+    },
+    {
+      "id": "key_pnrs_list",
+      "kind": "key_context",
+      "value": {
+        "pnrs": [
+          "8123456789",
+          "6524136790"
+        ]
+      }
+    },
+    {
+      "id": "key_nested_booking",
+      "kind": "key_context",
+      "value": {
+        "booking": {
+          "pnr": "9524136790",
+          "seats": 2
+        }
+      }
+    },
+    {
+      "id": "tool_args_get_booking",
+      "kind": "key_context",
+      "value": {
+        "name": "get_booking",
+        "arguments": {
+          "pnr": "8123456789"
+        }
+      }
+    },
+    {
+      "id": "int_amount_paise",
+      "kind": "price",
+      "value": {
+        "amount_paise": 9876543210
+      }
+    },
+    {
+      "id": "int_amount_cents",
+      "kind": "price",
+      "value": {
+        "amount_cents": 9123456789012
+      }
+    },
+    {
+      "id": "str_amount_paise",
+      "kind": "price",
+      "value": {
+        "amount_paise": "9876543210"
+      }
+    },
+    {
+      "id": "int_order_id",
+      "kind": "order_id",
+      "value": {
+        "order_id": 9876543210,
+        "id": 8123456789
+      }
+    },
+    {
+      "id": "int_epochs",
+      "kind": "timestamp",
+      "value": {
+        "ts_s": 1764000000,
+        "ts_ms": 1764000000123,
+        "ts_us": 1764000000123456,
+        "ts_ns": 1764000000123456789
+      }
+    },
+    {
+      "id": "str_epochs",
+      "kind": "timestamp",
+      "value": {
+        "ts_s": "1764000000",
+        "ts_ms": "1764000000123",
+        "ts_us": "1764000000123456",
+        "ts_ns": "1764000000123456789"
+      }
+    },
+    {
+      "id": "int_unkeyed_list",
+      "kind": "number",
+      "value": [
+        9876543210,
+        4111111111111111
+      ]
+    },
+    {
+      "id": "key_id",
+      "kind": "bare_number",
+      "value": {
+        "id": "9876543210"
+      }
+    },
+    {
+      "id": "key_value_bare",
+      "kind": "bare_number",
+      "value": {
+        "value": "8123456789",
+        "count": "9876543210"
+      }
+    },
+    {
+      "id": "bool_float_null",
+      "kind": "number",
+      "value": {
+        "phone": null,
+        "card": true,
+        "mobile": 9.87654321
+      }
+    }
+  ]
+}

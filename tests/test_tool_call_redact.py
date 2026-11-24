@@ -37,11 +37,6 @@ def test_tool_call_arguments_dropped_when_redact_raises():
     assert "Paris" not in attrs["zoroval.tool_calls"]
 
 
-def test_capture_content_off_drops_tool_call_arguments():
-    attrs = tool_calls_attr(capture_content=False)
-    assert json.loads(attrs["zoroval.tool_calls"]) == [{"id": "call_1", "name": "weather"}]
-
-
 def test_tool_call_arguments_kept_without_redact():
     attrs = tool_calls_attr()
     assert json.loads(attrs["zoroval.tool_calls"])[0]["arguments"] == {"city": "Paris"}

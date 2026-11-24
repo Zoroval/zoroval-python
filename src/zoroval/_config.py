@@ -65,8 +65,11 @@ class Config:
     service_name: str = "unknown_service:python"
     environment: Optional[str] = None
     release: Optional[str] = None
-    capture_content: bool = True
+    # The effective hook: built-in rules, the developer's function, or both chained (see _redact).
     redact: Optional[Callable[[Any], Any]] = None
+    redact_mode: Optional[str] = None       # None, "basic", "function" or "basic+function"
+    # capture_content was removed in 0.3.0. None: not set; False: the app had content off; True: no effect.
+    legacy_capture_content: Optional[bool] = None
     sample_rate: float = 1.0
     enabled: bool = True
     # Transport and queue. Defaults follow the PoC traps (REPORT.md sections 4.3 to 4.5).
@@ -108,7 +111,12 @@ def resolve(**kwargs: Any) -> Config:
     cfg.service_name = given.pop("service_name", None) or _default_service_name()
     cfg.environment = given.pop("environment", None) or os.environ.get("ZOROVAL_ENVIRONMENT") or None
     cfg.release = given.pop("release", None) or os.environ.get("ZOROVAL_RELEASE") or None
-    cfg.capture_content = given.pop("capture_content", _env_bool("ZOROVAL_CAPTURE_CONTENT", True))
+    if "capture_content" in given:
+        cfg.legacy_capture_content = bool(given.pop("capture_content"))
+    if not _env_bool("ZOROVAL_CAPTURE_CONTENT", True):
+        cfg.legacy_capture_content = False
+    from ._redact import build_hook
+    cfg.redact, cfg.redact_mode = build_hook(given.pop("redact", None))
     cfg.sample_rate = float(given.pop("sample_rate", _env_float("ZOROVAL_SAMPLE_RATE", 1.0)))
     cfg.sample_rate = min(1.0, max(0.0, cfg.sample_rate))
     cfg.enabled = given.pop("enabled", _env_bool("ZOROVAL_ENABLED", True))

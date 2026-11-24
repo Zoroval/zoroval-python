@@ -56,7 +56,7 @@ GENAI_SCOPE_PREFIXES = (
 )
 GENAI_ATTR_PREFIXES = ("gen_ai.", "zoroval.", "langfuse.", "llm.", "openinference.", "traceloop.")
 
-# Content other tools put on their spans. Dropped (or redacted) before export when content is off.
+# Content other tools put on their spans. Run through the redact hook before export when one is set.
 CONTENT_ATTR_PREFIXES = (
     "gen_ai.prompt", "gen_ai.completion", "gen_ai.input.messages", "gen_ai.output.messages",
     "gen_ai.system_instructions", "gen_ai.tool.call.arguments", "gen_ai.tool.call.result",
@@ -277,11 +277,11 @@ class ZorovalSpanProcessor(SpanProcessor):
         self._enqueue(span, extras, estimate_size(span))
 
     def _scrub(self, span: ReadableSpan) -> ReadableSpan:
-        """Other tools' spans carry content under their own keys. Drop it, or run the redact hook on
-        it, on a copy, so the app's other exporters still see the original span."""
+        """Other tools' spans carry content under their own keys. Run the redact hook on it, on a
+        copy, so the app's other exporters still see the original span."""
         cfg = self.cfg
         scope = span.instrumentation_scope.name if span.instrumentation_scope else ""
-        if scope == SCOPE_NAME or (cfg.capture_content and cfg.redact is None):
+        if scope == SCOPE_NAME or cfg.redact is None:
             return span
         attrs = dict(span.attributes or {})
         hits = [key for key in attrs if key.startswith(CONTENT_ATTR_PREFIXES)]
@@ -289,9 +289,6 @@ class ZorovalSpanProcessor(SpanProcessor):
         if not hits and len(events) == len(span.events or ()):
             return span
         for key in hits:
-            if not cfg.capture_content:
-                del attrs[key]
-                continue
             value, changed, ok = apply_redact(cfg.redact, attrs[key])
             if not ok:
                 del attrs[key]

@@ -21,7 +21,7 @@ from opentelemetry import context as otel_context
 from opentelemetry import trace as otel_trace
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
-from . import _json, _state
+from . import _json, _redact, _state
 from ._util import COUNTERS, internal_error, log_once
 
 MAX_CONVERSATION_ID = 256
@@ -111,15 +111,14 @@ def capture(value: Any, *, limit: Optional[int] = None) -> _json.Captured:
     if state is None:
         return _json.Captured(None, False, 0)
     cfg = state.cfg
-    return _json.capture(value, capture_content=cfg.capture_content, redact=cfg.redact,
-                         limit=limit or cfg.max_content_bytes)
+    return _json.capture(value, redact=cfg.redact, limit=limit or cfg.max_content_bytes)
 
 
 def content_allowed(span: Any) -> bool:
-    """False when content must not be serialized for this span (capture off, or sampled out
+    """False when content must not be serialized for this span (tracing off, or sampled out
     while Zoroval owns the provider so no other exporter needs the content)."""
     state = _state.get()
-    if state is None or not state.cfg.capture_content:
+    if state is None:
         return False
     if not span.is_recording():
         return False
@@ -154,6 +153,12 @@ def set_metadata_attr(span: Any, metadata: Optional[dict]) -> None:
         return
     state = _state.get()
     limit = state.cfg.max_metadata_bytes if state else 16 * 1024
+    if builtin_on():
+        try:
+            metadata = _redact.redact_value(metadata)
+        except Exception:  # noqa: BLE001  (cannot scan: send nothing rather than raw values)
+            COUNTERS.add("redact_errors")
+            return
     text, cut = _json.fit(_json.dumps(metadata), limit)
     span.set_attribute(METADATA, text)
     if cut:
@@ -188,20 +193,36 @@ def root_attributes(user_id: Optional[str], tags: Optional[Sequence[str]]) -> di
     return attrs
 
 
+def builtin_on() -> bool:
+    state = _state.get()
+    return state is not None and (state.cfg.redact_mode or "").startswith("basic")
+
+
+def scrub_text(text: str) -> str:
+    """Built-in rules on free text the redact hook does not see (error messages, stacks)."""
+    if not builtin_on():
+        return text
+    try:
+        return _redact.redact_text(text)
+    except Exception:  # noqa: BLE001
+        COUNTERS.add("redact_errors")
+        return "[not sent: redaction failed]"
+
+
 def record_error(span: Any, error: BaseException) -> None:
     """Span status ERROR plus a standard `exception` event with a capped stack."""
     try:
         state = _state.get()
         stack_limit = state.cfg.max_stack_bytes if state else 16 * 1024
-        message = f"{type(error).__name__}: {error}"[:32768]
+        message = scrub_text(f"{type(error).__name__}: {error}"[:32768])
         span.set_status(Status(StatusCode.ERROR, message))
         stack = "".join(traceback.format_exception(type(error), error, error.__traceback__))
         if len(stack) > stack_limit:
             stack = stack[-stack_limit:]
         span.add_event("exception", {
             "exception.type": type(error).__qualname__,
-            "exception.message": str(error)[:32768],
-            "exception.stacktrace": stack,
+            "exception.message": scrub_text(str(error)[:32768]),
+            "exception.stacktrace": scrub_text(stack),
             "exception.escaped": True,
         })
         span.set_attribute("error.type", type(error).__qualname__)

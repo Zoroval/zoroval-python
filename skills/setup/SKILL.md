@@ -29,6 +29,7 @@ Both CLIs print the same report and take the same commands. Flags match except t
 6. Never copy another vendor's secret (Langfuse, LangSmith, Phoenix) into Zoroval config, and never send it anywhere.
 7. When you cannot tell (two possible conversation ids, an unknown framework), stop and ask.
 8. If the prompt gave a `ZOROVAL_SETUP` value, keep it set for every `zoroval` command you run.
+9. Do not turn on redaction yourself. Ask the developer about it only if the code handles payments, health data or government IDs (Aadhaar, PAN, passport). Then offer the Python built-in, `zoroval.init(redact="basic")`, and add it only after their yes.
 
 ## Order
 
@@ -84,9 +85,9 @@ export async function handleMessage(chatId: string, userId: string, text: string
 }
 ```
 
-For plain `fetch` calls to OpenAI, use `const tracedFetch = zoroval.wrapFetch();` in place of `fetch`. For an OpenAI-compatible endpoint: `zoroval.wrapFetch(fetch, { baseURLs: ["https://llm.example.com/v1"] })`. Non-chat runs: `zoroval.trace("job-name", fn)`. Custom steps and tools: `zoroval.step(name, fn)` and `zoroval.tool(name, { arguments }, fn)`. Content off: `zoroval.init({ captureContent: false })`. Redaction: `zoroval.init({ redact: fn })`; if `fn` throws, that field is dropped.
+For plain `fetch` calls to OpenAI, use `const tracedFetch = zoroval.wrapFetch();` in place of `fetch`. For an OpenAI-compatible endpoint: `zoroval.wrapFetch(fetch, { baseURLs: ["https://llm.example.com/v1"] })`. Non-chat runs: `zoroval.trace("job-name", fn)`. Custom steps and tools: `zoroval.step(name, fn)` and `zoroval.tool(name, { arguments }, fn)`. Redaction: `zoroval.init({ redact: fn })`; if `fn` throws, that field is dropped.
 
-Non-chat runs in Python (agents, batch jobs): `with zoroval.trace("job-name"):`. Custom steps and tools: `@zoroval.step` and `@zoroval.tool` (sync or async). Content off: `zoroval.init(capture_content=False)`. Redaction: `zoroval.init(redact=fn)`; if `fn` raises, that field is dropped, never sent raw. Both also apply to the standard prompt, output and document fields of other tools' spans (Langfuse, OpenInference, OTel GenAI), and GenAI log events are not sent when either is set.
+Non-chat runs in Python (agents, batch jobs): `with zoroval.trace("job-name"):`. Custom steps and tools: `@zoroval.step` and `@zoroval.tool` (sync or async). Redaction is off by default (rule 9). Built-in: `zoroval.init(redact="basic")` replaces card numbers, emails, phone numbers, Aadhaar, PAN and API keys or tokens with labels such as `[CARD]`. Their own function: `zoroval.init(redact=fn)`; both: `redact=["basic", fn]`, built-in first. If `fn` raises, that field is dropped, never sent raw. Redaction also applies to the standard prompt, output and document fields of other tools' spans (Langfuse, OpenInference, OTel GenAI), and GenAI log events are not sent while it is on.
 
 ## Cases
 
@@ -118,7 +119,7 @@ Do not edit. Explain the three choices and let the user pick: (a) upgrade Langfu
 
 Detect: `opentelemetry-sdk`, `TracerProvider(` or `set_tracer_provider` in code, `OTEL_EXPORTER_OTLP_*` names, a Collector config.
 
-Change (default): the entry-point snippet right after `trace.set_tracer_provider(provider)`. Zoroval adds its own processor to that provider, exports only GenAI spans (never the app's HTTP or database spans), and adds the OpenAI and Anthropic wrappers. Wrap chat handlers in `conversation()`. Tell the user: Zoroval's LLM spans also go to their existing exporter, with prompt content; use `capture_content=False` or a filter on their side if that backend must not hold content.
+Change (default): the entry-point snippet right after `trace.set_tracer_provider(provider)`. Zoroval adds its own processor to that provider, exports only GenAI spans (never the app's HTTP or database spans), and adds the OpenAI and Anthropic wrappers. Wrap chat handlers in `conversation()`. Tell the user: Zoroval's LLM spans also go to their existing exporter, with prompt content; if that backend must not hold some of it, use `redact` (see the Python line above; their exporter gets the redacted spans too) or a filter on their side.
 
 Option (only with explicit consent, production config): a second OTLP exporter in the Collector pointing at `https://ingest.zoroval.com` with header `Authorization: Bearer ${env:ZOROVAL_INGEST_KEY}`. Show the YAML diff; do not apply it without a yes.
 
