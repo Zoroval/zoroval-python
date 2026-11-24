@@ -167,9 +167,14 @@ def test_invalid_redact_values_raise_typeerror(start, bad):
         start(redact=bad)
 
 
-def test_capture_content_was_removed(start):
-    with pytest.raises(TypeError, match="removed in 0.3.0"):
-        start(capture_content=False)
+def test_capture_content_false_keeps_tracing_off(start):
+    assert start(capture_content=False) is False
+    assert _state.get() is None
+
+
+def test_capture_content_true_is_ignored(start):
+    assert start(capture_content=True) is True
+    assert _state.get() is not None
 
 
 def test_env_capture_content_off_keeps_tracing_off(start, monkeypatch):

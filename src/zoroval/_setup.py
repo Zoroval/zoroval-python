@@ -179,12 +179,15 @@ def _init(*, instrument: Any, tracer_provider: Any, **kwargs: Any) -> bool:
                      "(zv_ingest_...). Tracing is off. Run `zoroval doctor`.")
             return False
 
-        if not _config._env_bool("ZOROVAL_CAPTURE_CONTENT", True):
+        if cfg.legacy_capture_content is False:
             # Content-off was removed in 0.3.0. Starting anyway would send what this app chose not to.
-            log_once("capture-content-removed", "zoroval: ZOROVAL_CAPTURE_CONTENT is no longer supported "
-                     "(removed in 0.3.0). Tracing is off so prompts and outputs are not sent. Remove the "
-                     "variable, and use zoroval.init(redact=...) to clean content before it is sent.")
+            log_once("capture-content-removed", "zoroval: capture_content (or ZOROVAL_CAPTURE_CONTENT) was "
+                     "removed in 0.3.0. Tracing is off so prompts and outputs are not sent. Remove it, and use "
+                     "zoroval.init(redact=...) to clean content before it is sent.")
             return False
+        if cfg.legacy_capture_content:
+            log_once("capture-content-true", "zoroval: capture_content was removed in 0.3.0 and has no effect; "
+                     "content is sent by default. You can remove it.")
 
         if not _config.ingest_url_ok(cfg.ingest_url):
             log_once("bad-url", "zoroval: the ingest URL must be https (http only for localhost). "
