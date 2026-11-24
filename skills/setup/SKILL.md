@@ -29,7 +29,7 @@ Both CLIs print the same report and take the same commands. Flags match except t
 6. Never copy another vendor's secret (Langfuse, LangSmith, Phoenix) into Zoroval config, and never send it anywhere.
 7. When you cannot tell (two possible conversation ids, an unknown framework), stop and ask.
 8. If the prompt gave a `ZOROVAL_SETUP` value, keep it set for every `zoroval` command you run.
-9. Do not turn on redaction yourself. Ask the developer about it only if the code handles payments, health data or government IDs (Aadhaar, PAN, passport). Then offer the Python built-in, `zoroval.init(redact="basic")`, and add it only after their yes.
+9. Do not turn on redaction yourself. Ask the developer about it only if the code handles payments, health data or government IDs (Aadhaar, PAN, passport). Then offer the built-in, `zoroval.init(redact="basic")` in Python or `zoroval.init({ redact: "basic" })` in TypeScript, and add it only after their yes.
 
 ## Order
 
@@ -85,7 +85,7 @@ export async function handleMessage(chatId: string, userId: string, text: string
 }
 ```
 
-For plain `fetch` calls to OpenAI, use `const tracedFetch = zoroval.wrapFetch();` in place of `fetch`. For an OpenAI-compatible endpoint: `zoroval.wrapFetch(fetch, { baseURLs: ["https://llm.example.com/v1"] })`. Non-chat runs: `zoroval.trace("job-name", fn)`. Custom steps and tools: `zoroval.step(name, fn)` and `zoroval.tool(name, { arguments }, fn)`. Redaction: `zoroval.init({ redact: fn })`; if `fn` throws, that field is dropped.
+For plain `fetch` calls to OpenAI, use `const tracedFetch = zoroval.wrapFetch();` in place of `fetch`. For an OpenAI-compatible endpoint: `zoroval.wrapFetch(fetch, { baseURLs: ["https://llm.example.com/v1"] })`. Non-chat runs: `zoroval.trace("job-name", fn)`. Custom steps and tools: `zoroval.step(name, fn)` and `zoroval.tool(name, { arguments }, fn)`. Redaction is off by default (rule 9). Built-in: `zoroval.init({ redact: "basic" })`, the same rules as Python. Their own function: `zoroval.init({ redact: fn })`; both: `redact: ["basic", fn]`, built-in first. If `fn` throws or returns null, that field is dropped.
 
 Non-chat runs in Python (agents, batch jobs): `with zoroval.trace("job-name"):`. Custom steps and tools: `@zoroval.step` and `@zoroval.tool` (sync or async). Redaction is off by default (rule 9). Built-in: `zoroval.init(redact="basic")` replaces card numbers, emails, phone numbers, Aadhaar, PAN and API keys or tokens with labels such as `[CARD]`. Their own function: `zoroval.init(redact=fn)`; both: `redact=["basic", fn]`, built-in first. If `fn` raises, that field is dropped, never sent raw. Redaction also applies to the standard prompt, output and document fields of other tools' spans (Langfuse, OpenInference, OTel GenAI), and GenAI log events are not sent while it is on.
 

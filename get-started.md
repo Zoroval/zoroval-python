@@ -10,7 +10,7 @@ You are helping a developer send their LLM app's traces to Zoroval. Follow these
 - Ask before touching deploy files, CI, hosting dashboards, secrets managers or Collector config.
 - Do not commit. Keep a list of changed files for rollback.
 - If the prompt gave a `ZOROVAL_SETUP` value, keep it set for every `zoroval` command you run (`npx zoroval` too).
-- Do not turn on redaction yourself. Ask the developer about it only if the code handles payments, health data or government IDs (Aadhaar, PAN, passport). In Python, the built-in is `zoroval.init(redact="basic")`; add it only after their yes.
+- Do not turn on redaction yourself. Ask the developer about it only if the code handles payments, health data or government IDs (Aadhaar, PAN, passport). The built-in is `zoroval.init(redact="basic")` in Python and `zoroval.init({ redact: "basic" })` in TypeScript; add it only after their yes.
 
 ## Which SDK
 
