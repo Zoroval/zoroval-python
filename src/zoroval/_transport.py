@@ -46,6 +46,7 @@ from ._util import COUNTERS, log_once, logger
 from ._version import SDK_NAME, __version__
 
 USER_AGENT = f"{SDK_NAME}/{__version__}"
+CAPTIVE_REASON = "captive_portal_or_proxy"   # a 2xx that is not OTLP, or a 3xx: retried later
 FATAL_STATUS = {401, 403}
 RETRY_AFTER_STATUS = {429, 503}
 RETRY_STATUS = {500, 502, 504}
@@ -563,14 +564,24 @@ class Transport:
             if dropped:
                 headers["X-Zoroval-Dropped-Spans"] = str(dropped)
             status, reason, retry_after, response_body, timed_out = 0, "", None, b"", False
+            rejected, obstructed = 0, False
             # An attempt cut short by the deadline proves nothing about the uplink: no split.
             cut_short = remaining < per_request
             try:
                 status, response_headers, response_body = self._post_once(
                     url, body, headers, min(per_request, remaining), deadline)
-                if not 200 <= status < 300:
-                    reason = parse_status_message(response_body, response_headers.get("Content-Type", ""))
+                content_type = response_headers.get("Content-Type", "")
+                if 200 <= status < 300:
+                    parsed = self._rejected_count(response_body, kind, content_type)
+                    if parsed is None:
+                        obstructed, reason = True, CAPTIVE_REASON
+                    else:
+                        rejected = parsed
+                else:
+                    reason = parse_status_message(response_body, content_type)
                     retry_after = response_headers.get("Retry-After")
+                    if 300 <= status < 400:   # a redirect: a login page or proxy, not the gateway
+                        obstructed, reason = True, CAPTIVE_REASON
             except UploadTimeout:
                 status, reason, timed_out = 0, "upload_timeout", not cut_short
             except TimeoutError:   # ResponseTimeout: resend under the same batch id
@@ -578,10 +589,9 @@ class Transport:
             except Exception as error:  # noqa: BLE001 - connection refused, DNS, TLS, reset
                 status, reason = 0, f"connection:{type(error).__name__}"
 
-            if 200 <= status < 300:
+            if 200 <= status < 300 and not obstructed:
                 self._ack_dropped(dropped)
                 self._succeeded()
-                rejected = self._rejected_count(response_body, kind)
                 COUNTERS.add("bytes_sent", len(body))
                 self.last_error = None
                 return SendResult(True, status=status, rejected=rejected)
@@ -594,7 +604,8 @@ class Transport:
                          "Run `zoroval doctor` to check the key.", self.fatal_reason)
                 return SendResult(False, status=status, reason=self.fatal_reason, fatal=True)
             timed_out = timed_out or status == TIMEOUT_STATUS
-            if status and not timed_out and status not in RETRY_AFTER_STATUS and status not in RETRY_STATUS:
+            if (status and not timed_out and not obstructed
+                    and status not in RETRY_AFTER_STATUS and status not in RETRY_STATUS):
                 log_once(f"status:{status}", "zoroval: the gateway refused a batch (%s %s).", status, reason)
                 return SendResult(False, status=status, reason=reason)
             if timed_out and split_on_timeout:
@@ -630,9 +641,14 @@ class Transport:
         return base * (0.8 + 0.4 * random.random())
 
     @staticmethod
-    def _rejected_count(body: bytes, kind: str) -> int:
+    def _rejected_count(body: bytes, kind: str, content_type: str = "") -> Optional[int]:
+        """Rejected-span count from a 2xx answer, or None when the answer is not from the gateway
+        (a captive portal or proxy page). An empty body, or JSON, is a plain success."""
         if not body:
             return 0
+        media = content_type.split(";", 1)[0].strip().lower()
+        if media.startswith("text/"):
+            return None
         try:
             if kind == "logs":
                 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceResponse
@@ -644,7 +660,7 @@ class Transport:
             msg.ParseFromString(body)
             return int(msg.partial_success.rejected_spans)
         except Exception:  # noqa: BLE001
-            return 0
+            return 0 if media in ("application/x-protobuf", "application/json") else None
 
     # ------------------------------------------------------------------ status (doctor)
 
