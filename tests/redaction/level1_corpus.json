@@ -250,13 +250,48 @@
     },
     {
       "id": "phone_in_zero_prefix",
-      "text": "098765 43210",
-      "expect": "[PHONE]"
+      "text": "mobile: 098765 43210",
+      "expect": "mobile: [PHONE]"
     },
     {
       "id": "phone_in_91_prefix",
-      "text": "91 98765 43210",
+      "text": "contact 91 98765 43210",
+      "expect": "contact [PHONE]"
+    },
+    {
+      "id": "phone_in_call_me_on",
+      "text": "call me on 98765 43210",
+      "expect": "call me on [PHONE]"
+    },
+    {
+      "id": "phone_in_my_number_is",
+      "text": "my number is 9876543210",
+      "expect": "my number is [PHONE]"
+    },
+    {
+      "id": "phone_in_plus91_no_space",
+      "text": "+91 9876543210",
       "expect": "[PHONE]"
+    },
+    {
+      "id": "phone_in_ph_no",
+      "text": "Ph. no. 9876543210",
+      "expect": "Ph. no. [PHONE]"
+    },
+    {
+      "id": "phone_in_tel",
+      "text": "tel:9876543210",
+      "expect": "tel:[PHONE]"
+    },
+    {
+      "id": "phone_in_mera_number",
+      "text": "bhai mera number 9876543210 hai",
+      "expect": "bhai mera number [PHONE] hai"
+    },
+    {
+      "id": "phone_in_hindi_mobile",
+      "text": "मोबाइल नंबर 9876543210",
+      "expect": "मोबाइल नंबर [PHONE]"
     },
     {
       "id": "phone_in_paren",
@@ -285,8 +320,8 @@
     },
     {
       "id": "phone_in_full_width",
-      "text": "電話 ９８７６５４３２１０",
-      "expect": "電話 [PHONE]"
+      "text": "phone ９８７６５４３２１０",
+      "expect": "phone [PHONE]"
     },
     {
       "id": "phone_in_json",
@@ -866,6 +901,46 @@
       "text": "Qty: 1, 2, 3, 98, 765"
     },
     {
+      "id": "bare_10_digits",
+      "kind": "bare_number",
+      "text": "8123456789"
+    },
+    {
+      "id": "bare_10_digits_in_text",
+      "kind": "bare_number",
+      "text": "ref 9876543210 was updated"
+    },
+    {
+      "id": "bare_zero_prefix",
+      "kind": "bare_number",
+      "text": "098765 43210"
+    },
+    {
+      "id": "bare_91_prefix",
+      "kind": "bare_number",
+      "text": "91 98765 43210"
+    },
+    {
+      "id": "bare_3_3_4",
+      "kind": "bare_number",
+      "text": "987-654-3210"
+    },
+    {
+      "id": "hindi_order_number",
+      "kind": "order_id",
+      "text": "ऑर्डर नंबर 9876543210"
+    },
+    {
+      "id": "tamil_order_number",
+      "kind": "order_id",
+      "text": "ஆர்டர் எண் 9876543210"
+    },
+    {
+      "id": "phone_word_far_away",
+      "kind": "bare_number",
+      "text": "call us later, the code is 9876543210"
+    },
+    {
       "id": "json_string_pnr",
       "kind": "pnr",
       "text": "{\"pnr\":\"8123456789\"}"
@@ -984,10 +1059,37 @@
     {
       "id": "key_order_text_phone",
       "value": {
-        "order_id": "order for 9876543210"
+        "order_id": "order for phone 9876543210"
       },
       "expect": {
-        "order_id": "order for [PHONE]"
+        "order_id": "order for phone [PHONE]"
+      }
+    },
+    {
+      "id": "key_phone_number",
+      "value": {
+        "phone_number": "9876543210"
+      },
+      "expect": {
+        "phone_number": "[PHONE]"
+      }
+    },
+    {
+      "id": "key_contact",
+      "value": {
+        "contact": "98765 43210"
+      },
+      "expect": {
+        "contact": "[PHONE]"
+      }
+    },
+    {
+      "id": "key_whatsapp",
+      "value": {
+        "whatsapp": "9876543210"
+      },
+      "expect": {
+        "whatsapp": "[PHONE]"
       }
     },
     {
@@ -1264,6 +1366,21 @@
         9876543210,
         4111111111111111
       ]
+    },
+    {
+      "id": "key_id",
+      "kind": "bare_number",
+      "value": {
+        "id": "9876543210"
+      }
+    },
+    {
+      "id": "key_value_bare",
+      "kind": "bare_number",
+      "value": {
+        "value": "8123456789",
+        "count": "9876543210"
+      }
     },
     {
       "id": "bool_float_null",

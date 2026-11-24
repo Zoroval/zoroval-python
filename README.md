@@ -94,12 +94,12 @@ Before anything leaves your app, it replaces these values with a label:
 |---|---|
 | Payment card numbers: 13 to 19 digits that start like a card and pass the card check digit | `[CARD]` |
 | Email addresses | `[EMAIL]` |
-| Indian mobile numbers, with or without +91 or 0, and any phone number written with + and a country code | `[PHONE]` |
+| Phone numbers written with + and a country code, such as +91 98765 43210. Indian mobile numbers without + only when a phone word comes right before them (phone, mobile, mob, cell, contact, WhatsApp, call, ph, tel, "my number is") or they sit under a key such as phone, mobile, phone_number, contact or whatsapp | `[PHONE]` |
 | Aadhaar numbers: 12 digits that pass the Aadhaar check digit | `[AADHAAR]` |
 | PAN numbers | `[PAN]` |
 | API keys and tokens with a known prefix (OpenAI, Anthropic, Stripe, Razorpay, GitHub, GitLab, AWS, Slack, Google, Hugging Face, npm, SendGrid, Zoroval), JWTs, bearer tokens and private keys | `[SECRET]` |
 
-It finds these with or without spaces, dashes or line breaks, and in full-width or Indian-script digits. It leaves a 10 or 12 digit number without + alone when a word such as order, PNR, invoice, AWB or tracking comes right before it, or when that word is its key, as in `{"pnr": "8123456789"}` or `{"orderId": "234567890124"}`. Numbers stored as integers are left alone unless the key names a phone, mobile, card or Aadhaar field, as in `{"phone": 9876543210}`.
+It finds these with or without spaces, dashes or line breaks, and in full-width or Indian-script digits. A 10-digit number on its own, or with only 0 or 91 in front, is kept: `8123456789` and `{"id": "9876543210"}` stay as they are, `call me on 98765 43210` and `{"phone": "9876543210"}` do not. A 12-digit number that could be Aadhaar is kept when a word such as order, PNR, invoice, AWB or tracking comes right before it or is its key, as in `{"order_id": "234567890124"}`. Numbers stored as integers are left alone unless the key names a phone, mobile, card or Aadhaar field, as in `{"phone": 9876543210}`.
 
 It does not find names, addresses, health details, bank account or UPI IDs, landline numbers without +, or anything not in the table. It matches patterns, so it can miss a value written an unusual way, and it can replace an ID that happens to look like a card or Aadhaar number.
 

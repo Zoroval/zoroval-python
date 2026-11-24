@@ -51,7 +51,8 @@ def test_corpus_is_big_enough_and_ids_unique():
 
 PATTERNS = [(r["id"], key, value) for r in RULES["rules"]
             for key, value in (("pattern", r["pattern"]), ("prefilter", r.get("prefilter")),
-                               ("deny_prefix", (r.get("deny_prefix") or {}).get("pattern"))) if value]
+                               ("deny_prefix", (r.get("deny_prefix") or {}).get("pattern")),
+                               ("require_prefix", (r.get("require_prefix") or {}).get("pattern"))) if value]
 
 
 @pytest.mark.parametrize("rule_id,key,pattern", PATTERNS, ids=lambda v: str(v)[:40])
@@ -68,7 +69,8 @@ def test_rules_are_well_formed():
     assert {r["label"] for r in RULES["rules"]} == set(RULES["labels"])
     for rule in RULES["rules"]:
         assert set(rule.get("validators", [])) <= set(_redact.VALIDATORS)
-        assert set(rule) <= {"id", "label", "covers", "prefilter", "pattern", "validators", "deny_prefix"}
+        assert set(rule) <= {"id", "label", "covers", "prefilter", "pattern", "validators", "deny_prefix",
+                             "require_prefix"}
     for entry in RULES["fold"]:
         first, last = entry["from"]
         assert 0 < first <= last <= 0xFFFF, "fold stays in the BMP so offsets match in UTF-16"

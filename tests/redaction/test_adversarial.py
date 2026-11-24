@@ -178,7 +178,7 @@ def test_labels_only_replace_never_invent(text):
 
 PLANTS = st.sampled_from([
     ("4111 1111 1111 1111", "[CARD]"), ("4111111111111111", "[CARD]"), ("378282246310005", "[CARD]"),
-    ("priya@example.com", "[EMAIL]"), ("+91 98765 43210", "[PHONE]"), ("9876543210", "[PHONE]"),
+    ("priya@example.com", "[EMAIL]"), ("+91 98765 43210", "[PHONE]"), ("phone 9876543210", "[PHONE]"),
     ("+1 (415) 555-2671", "[PHONE]"), ("ABCPE1234F", "[PAN]"), ("AKIAIOSFODNN7EXAMPLE", "[SECRET]"),
     ("sk-proj-abcdefghijklmnopqrstuvwxyz012345", "[SECRET]"),
 ])
@@ -209,9 +209,9 @@ def test_structures_never_raise_and_are_not_mutated(value):
 
 
 def test_unicode_survives_untouched_around_matches():
-    text = "\u202eरुको 😀 a@b.co 🇮🇳 \ud800 ９८७६५४३२१० சரி ௦"
+    text = "\u202eरुको 😀 a@b.co 🇮🇳 \ud800 phone ９८७६५४३२१० சரி ௦"
     out = redact_text(text)
-    assert out == "\u202eरुको 😀 [EMAIL] 🇮🇳 \ud800 [PHONE] சரி ௦"
+    assert out == "\u202eरुको 😀 [EMAIL] 🇮🇳 \ud800 phone [PHONE] சரி ௦"
 
 
 def test_mixed_script_digits_inside_one_number_are_folded():

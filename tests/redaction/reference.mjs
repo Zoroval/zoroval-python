@@ -35,7 +35,15 @@ const rules = rulesDoc.rules.map((r) => ({
   validators: (r.validators || []).map((n) => VALIDATORS[n]),
   deny: r.deny_prefix ? new RegExp(r.deny_prefix.pattern) : null,
   window: r.deny_prefix ? r.deny_prefix.window : 0,
+  require: r.require_prefix ? new RegExp(r.require_prefix.pattern) : null,
+  requireWindow: r.require_prefix ? r.require_prefix.window : 0,
 }));
+
+function before(shadow, start, window, context) {
+  let text = shadow.slice(Math.max(0, start - window), start);
+  if (context && start < window) text = (context + text).slice(-window);
+  return text.toLowerCase();
+}
 
 const integerKeys = new RegExp(rulesDoc.integer_keys);
 
@@ -55,11 +63,8 @@ function redact(text, key) {
       if (start === end) continue;
       const digits = m[0].replace(/[^0-9]/g, "");
       if (!rule.validators.every((v) => v(digits))) continue;
-      if (rule.deny) {
-        let before = shadow.slice(Math.max(0, start - rule.window), start);
-        if (context && start < rule.window) before = (context + before).slice(-rule.window);
-        if (rule.deny.test(before.toLowerCase())) continue;
-      }
+      if (rule.deny && rule.deny.test(before(shadow, start, rule.window, context))) continue;
+      if (rule.require && !rule.require.test(before(shadow, start, rule.requireWindow, context))) continue;
       out += text.slice(last, start) + rule.label;
       sh += shadow.slice(last, start) + rule.label;
       last = end;

@@ -62,7 +62,7 @@ _NOT_DIGIT = re.compile(r"[^0-9]")
 # ---------------------------------------------------------------------------- rules
 
 class _Rule:
-    __slots__ = ("id", "label", "regex", "prefilter", "validators", "deny", "window")
+    __slots__ = ("id", "label", "regex", "prefilter", "validators", "deny", "window", "require", "require_window")
 
     def __init__(self, spec: dict[str, Any]) -> None:
         self.id = spec["id"]
@@ -73,6 +73,9 @@ class _Rule:
         deny = spec.get("deny_prefix")
         self.deny = re.compile(deny["pattern"]) if deny else None
         self.window = int(deny["window"]) if deny else 0
+        require = spec.get("require_prefix")
+        self.require = re.compile(require["pattern"]) if require else None
+        self.require_window = int(require["window"]) if require else 0
 
 
 class Rules:
@@ -108,6 +111,14 @@ def rules() -> Rules:
 
 # ---------------------------------------------------------------------------- strings
 
+def _before(shadow: str, start: int, window: int, context: str) -> str:
+    """The lower-cased text a prefix check looks at: the key (if any), then the text before the match."""
+    before = shadow[max(0, start - window):start]
+    if context and start < window:
+        before = (context + before)[-window:]
+    return before.lower()
+
+
 def redact_text(text: str, rs: Optional[Rules] = None, key: Optional[str] = None) -> str:
     """Replace level-1 values in one string with labels. Returns the same object when nothing matched.
 
@@ -139,12 +150,11 @@ def redact_text(text: str, rs: Optional[Rules] = None, key: Optional[str] = None
                 digits = _NOT_DIGIT.sub("", match.group())
                 if not all(check(digits) for check in rule.validators):
                     continue
-            if rule.deny is not None:
-                before = shadow[max(0, start - rule.window):start]
-                if context and start < rule.window:
-                    before = (context + before)[-rule.window:]
-                if rule.deny.search(before.lower()):
-                    continue
+            if rule.deny is not None and rule.deny.search(_before(shadow, start, rule.window, context)):
+                continue
+            if rule.require is not None and not rule.require.search(
+                    _before(shadow, start, rule.require_window, context)):
+                continue
             out.append(text[last:start])
             out.append(rule.label)
             if not same:
