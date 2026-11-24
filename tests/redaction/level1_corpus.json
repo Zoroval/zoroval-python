@@ -2,7 +2,10 @@
   "about": [
     "Shared test corpus for level-1 redaction. must_redact: applying the rules to text must give expect",
     "exactly. must_keep: applying the rules must return text unchanged. Card and Aadhaar samples are made",
-    "up and only pass their check digits; phone numbers are examples."
+    "up and only pass their check digits; phone numbers are examples. Secret samples are obviously fake.",
+    "values_must_redact and values_must_keep: walk the JSON value (object keys are context, see the rules",
+    "file); the result must equal expect, or the value unchanged. Integers above 2^53 lose precision in",
+    "JavaScript; compare them after parsing."
   ],
   "must_redact": [
     {
@@ -861,6 +864,415 @@
       "id": "quantity_list",
       "kind": "number",
       "text": "Qty: 1, 2, 3, 98, 765"
+    },
+    {
+      "id": "json_string_pnr",
+      "kind": "pnr",
+      "text": "{\"pnr\":\"8123456789\"}"
+    },
+    {
+      "id": "json_string_order_id",
+      "kind": "order_id",
+      "text": "{\"order_id\": \"234567890124\"}"
+    },
+    {
+      "id": "python_call_pnr",
+      "kind": "pnr",
+      "text": "get_booking(pnr=\"8123456789\")"
+    },
+    {
+      "id": "python_call_single_quotes",
+      "kind": "pnr",
+      "text": "get_booking(pnr='8123456789', awb='7834567890')"
+    },
+    {
+      "id": "query_pnr",
+      "kind": "pnr",
+      "text": "pnr=8123456789"
+    },
+    {
+      "id": "camel_case_text",
+      "kind": "order_id",
+      "text": "orderId: \"9876543210\""
+    },
+    {
+      "id": "amount_paise_text",
+      "kind": "price",
+      "text": "amount_paise=9876543210"
+    },
+    {
+      "id": "amount_cents_text",
+      "kind": "price",
+      "text": "amount 9876543210 cents"
+    },
+    {
+      "id": "epoch_s_string",
+      "kind": "timestamp",
+      "text": "\"1764000000\""
+    },
+    {
+      "id": "epoch_ms_string",
+      "kind": "timestamp",
+      "text": "\"1764000000123\""
+    },
+    {
+      "id": "epoch_us_string",
+      "kind": "timestamp",
+      "text": "\"1764000000123456\""
+    },
+    {
+      "id": "epoch_ns_string",
+      "kind": "timestamp",
+      "text": "\"1764000000123456789\""
+    }
+  ],
+  "values_must_redact": [
+    {
+      "id": "key_user_phone",
+      "value": {
+        "user_phone": "9876543210"
+      },
+      "expect": {
+        "user_phone": "[PHONE]"
+      }
+    },
+    {
+      "id": "key_phone",
+      "value": {
+        "phone": "9876543210"
+      },
+      "expect": {
+        "phone": "[PHONE]"
+      }
+    },
+    {
+      "id": "int_phone",
+      "value": {
+        "phone": 9876543210
+      },
+      "expect": {
+        "phone": "[PHONE]"
+      }
+    },
+    {
+      "id": "int_mobile_number",
+      "value": {
+        "mobileNumber": 9123456789
+      },
+      "expect": {
+        "mobileNumber": "[PHONE]"
+      }
+    },
+    {
+      "id": "int_whatsapp",
+      "value": {
+        "whatsapp": 919876543210
+      },
+      "expect": {
+        "whatsapp": "[PHONE]"
+      }
+    },
+    {
+      "id": "key_notes_phone",
+      "value": {
+        "notes": "call 9876543210"
+      },
+      "expect": {
+        "notes": "call [PHONE]"
+      }
+    },
+    {
+      "id": "key_order_text_phone",
+      "value": {
+        "order_id": "order for 9876543210"
+      },
+      "expect": {
+        "order_id": "order for [PHONE]"
+      }
+    },
+    {
+      "id": "key_card",
+      "value": {
+        "card": "4111111111111111"
+      },
+      "expect": {
+        "card": "[CARD]"
+      }
+    },
+    {
+      "id": "key_aadhaar",
+      "value": {
+        "aadhaar": "276910738576"
+      },
+      "expect": {
+        "aadhaar": "[AADHAAR]"
+      }
+    },
+    {
+      "id": "tool_args_mixed",
+      "value": {
+        "name": "create_ticket",
+        "arguments": {
+          "email": "priya@example.com",
+          "pnr": "8123456789",
+          "phone": "+91 98765 43210"
+        }
+      },
+      "expect": {
+        "name": "create_ticket",
+        "arguments": {
+          "email": "[EMAIL]",
+          "pnr": "8123456789",
+          "phone": "[PHONE]"
+        }
+      }
+    },
+    {
+      "id": "messages",
+      "value": [
+        {
+          "role": "user",
+          "content": "my number is 9876543210"
+        }
+      ],
+      "expect": [
+        {
+          "role": "user",
+          "content": "my number is [PHONE]"
+        }
+      ]
+    },
+    {
+      "id": "phones_list",
+      "value": {
+        "phones": [
+          "9876543210",
+          "+44 20 7946 0958"
+        ]
+      },
+      "expect": {
+        "phones": [
+          "[PHONE]",
+          "[PHONE]"
+        ]
+      }
+    }
+  ],
+  "values_must_keep": [
+    {
+      "id": "key_pnr_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "pnr": "8123456789"
+      }
+    },
+    {
+      "id": "key_PNR_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "PNR": "8123456789"
+      }
+    },
+    {
+      "id": "key_order_id_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "order_id": "8123456789"
+      }
+    },
+    {
+      "id": "key_orderId_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "orderId": "8123456789"
+      }
+    },
+    {
+      "id": "key_booking_ref_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "booking_ref": "8123456789"
+      }
+    },
+    {
+      "id": "key_bookingRef_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "bookingRef": "8123456789"
+      }
+    },
+    {
+      "id": "key_tracking_number_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "tracking_number": "8123456789"
+      }
+    },
+    {
+      "id": "key_trackingNumber_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "trackingNumber": "8123456789"
+      }
+    },
+    {
+      "id": "key_awb_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "awb": "8123456789"
+      }
+    },
+    {
+      "id": "key_awb_no_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "awb_no": "8123456789"
+      }
+    },
+    {
+      "id": "key_invoice_no_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "invoice_no": "8123456789"
+      }
+    },
+    {
+      "id": "key_invoiceNumber_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "invoiceNumber": "8123456789"
+      }
+    },
+    {
+      "id": "key_consignment_no_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "consignment_no": "8123456789"
+      }
+    },
+    {
+      "id": "key_utr_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "utr": "8123456789"
+      }
+    },
+    {
+      "id": "key_ticket_id_phone_shape",
+      "kind": "key_context",
+      "value": {
+        "ticket_id": "8123456789"
+      }
+    },
+    {
+      "id": "key_order_id_aadhaar_shape",
+      "kind": "key_context",
+      "value": {
+        "order_id": "898635321372"
+      }
+    },
+    {
+      "id": "key_tracking_aadhaar_shape",
+      "kind": "key_context",
+      "value": {
+        "tracking_number": "831629667174"
+      }
+    },
+    {
+      "id": "key_pnrs_list",
+      "kind": "key_context",
+      "value": {
+        "pnrs": [
+          "8123456789",
+          "6524136790"
+        ]
+      }
+    },
+    {
+      "id": "key_nested_booking",
+      "kind": "key_context",
+      "value": {
+        "booking": {
+          "pnr": "9524136790",
+          "seats": 2
+        }
+      }
+    },
+    {
+      "id": "tool_args_get_booking",
+      "kind": "key_context",
+      "value": {
+        "name": "get_booking",
+        "arguments": {
+          "pnr": "8123456789"
+        }
+      }
+    },
+    {
+      "id": "int_amount_paise",
+      "kind": "price",
+      "value": {
+        "amount_paise": 9876543210
+      }
+    },
+    {
+      "id": "int_amount_cents",
+      "kind": "price",
+      "value": {
+        "amount_cents": 9123456789012
+      }
+    },
+    {
+      "id": "str_amount_paise",
+      "kind": "price",
+      "value": {
+        "amount_paise": "9876543210"
+      }
+    },
+    {
+      "id": "int_order_id",
+      "kind": "order_id",
+      "value": {
+        "order_id": 9876543210,
+        "id": 8123456789
+      }
+    },
+    {
+      "id": "int_epochs",
+      "kind": "timestamp",
+      "value": {
+        "ts_s": 1764000000,
+        "ts_ms": 1764000000123,
+        "ts_us": 1764000000123456,
+        "ts_ns": 1764000000123456789
+      }
+    },
+    {
+      "id": "str_epochs",
+      "kind": "timestamp",
+      "value": {
+        "ts_s": "1764000000",
+        "ts_ms": "1764000000123",
+        "ts_us": "1764000000123456",
+        "ts_ns": "1764000000123456789"
+      }
+    },
+    {
+      "id": "int_unkeyed_list",
+      "kind": "number",
+      "value": [
+        9876543210,
+        4111111111111111
+      ]
+    },
+    {
+      "id": "bool_float_null",
+      "kind": "number",
+      "value": {
+        "phone": null,
+        "card": true,
+        "mobile": 9.87654321
+      }
     }
   ]
 }

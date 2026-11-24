@@ -48,8 +48,10 @@ def test_default_is_off_and_sends_content_as_is(start):
 
 def test_basic_replaces_level1_values(start):
     assert start(redact="basic")
-    attrs = output_of({"messages": [{"role": "user", "content": TEXT}], "n": 9876543210})
-    assert json.loads(attrs["zoroval.output"]) == {"messages": [{"role": "user", "content": CLEAN}], "n": "[PHONE]"}
+    attrs = output_of({"messages": [{"role": "user", "content": TEXT}], "phone": 9876543210, "n": 9876543210,
+                       "pnr": "8123456789"})
+    assert json.loads(attrs["zoroval.output"]) == {"messages": [{"role": "user", "content": CLEAN}],
+                                                   "phone": "[PHONE]", "n": 9876543210, "pnr": "8123456789"}
     assert attrs["zoroval.redacted"] is True
     assert zoroval.status()["redact"] == "basic"
 

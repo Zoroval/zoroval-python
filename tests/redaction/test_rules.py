@@ -27,10 +27,22 @@ def test_must_keep(case):
     assert _redact.redact_text(case["text"]) is case["text"]
 
 
+@pytest.mark.parametrize("case", CORPUS["values_must_redact"], ids=lambda c: c["id"])
+def test_values_must_redact(case):
+    assert _redact.redact_value(case["value"]) == case["expect"]
+
+
+@pytest.mark.parametrize("case", CORPUS["values_must_keep"], ids=lambda c: c["id"])
+def test_values_must_keep(case):
+    assert _redact.redact_value(case["value"]) is case["value"]
+
+
 def test_corpus_is_big_enough_and_ids_unique():
-    ids = [c["id"] for c in CORPUS["must_redact"] + CORPUS["must_keep"]]
+    ids = [c["id"] for key in ("must_redact", "must_keep", "values_must_redact", "values_must_keep")
+           for c in CORPUS[key]]
     assert len(ids) == len(set(ids))
-    assert len(CORPUS["must_redact"]) >= 80 and len(CORPUS["must_keep"]) >= 70
+    assert len(CORPUS["must_redact"]) >= 80 and len(CORPUS["must_keep"]) >= 85
+    assert len(CORPUS["values_must_redact"]) >= 10 and len(CORPUS["values_must_keep"]) >= 25
     labels_used = {label for c in CORPUS["must_redact"] for label in re.findall(r"\[[A-Z]+\]", c["expect"])}
     assert labels_used == set(RULES["labels"])
 
@@ -79,7 +91,8 @@ def test_javascript_reference_gives_the_same_results():
                          capture_output=True, text=True, timeout=60, check=True)
     result = json.loads(out.stdout)
     assert result["failures"] == []
-    assert result["checked"] == len(CORPUS["must_redact"]) + len(CORPUS["must_keep"])
+    assert result["checked"] == sum(len(CORPUS[k]) for k in ("must_redact", "must_keep", "values_must_redact",
+                                                              "values_must_keep"))
 
 
 # ---------------------------------------------------------------------------- validators

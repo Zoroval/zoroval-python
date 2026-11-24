@@ -37,7 +37,10 @@ const rules = rulesDoc.rules.map((r) => ({
   window: r.deny_prefix ? r.deny_prefix.window : 0,
 }));
 
-function redact(text) {
+const integerKeys = new RegExp(rulesDoc.integer_keys);
+
+function redact(text, key) {
+  const context = key ? key.toLowerCase() + ": " : "";
   let shadow = "";
   for (const ch of text) {
     const cp = ch.codePointAt(0);
@@ -52,7 +55,11 @@ function redact(text) {
       if (start === end) continue;
       const digits = m[0].replace(/[^0-9]/g, "");
       if (!rule.validators.every((v) => v(digits))) continue;
-      if (rule.deny && rule.deny.test(shadow.slice(Math.max(0, start - rule.window), start).toLowerCase())) continue;
+      if (rule.deny) {
+        let before = shadow.slice(Math.max(0, start - rule.window), start);
+        if (context && start < rule.window) before = (context + before).slice(-rule.window);
+        if (rule.deny.test(before.toLowerCase())) continue;
+      }
       out += text.slice(last, start) + rule.label;
       sh += shadow.slice(last, start) + rule.label;
       last = end;
@@ -65,6 +72,24 @@ function redact(text) {
   return text;
 }
 
+function walk(value, key) {
+  if (typeof value === "string") return redact(value, key);
+  if (typeof value === "number") {
+    if (!Number.isInteger(value) || Math.abs(value) < 1e9 || !key || !integerKeys.test(key.toLowerCase())) return value;
+    const text = String(value);
+    const out = redact(text, key);
+    return out === text ? value : out;
+  }
+  if (Array.isArray(value)) return value.map((item) => walk(item, key));
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) out[k] = walk(v, k);
+    return out;
+  }
+  return value;
+}
+
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const failures = [];
 let checked = 0;
 for (const e of corpus.must_redact) {
@@ -76,5 +101,15 @@ for (const e of corpus.must_keep) {
   checked++;
   const got = redact(e.text);
   if (got !== e.text) failures.push({ id: e.id, got, want: e.text });
+}
+for (const e of corpus.values_must_redact || []) {
+  checked++;
+  const got = walk(e.value);
+  if (!same(got, e.expect)) failures.push({ id: e.id, got, want: e.expect });
+}
+for (const e of corpus.values_must_keep || []) {
+  checked++;
+  const got = walk(e.value);
+  if (!same(got, e.value)) failures.push({ id: e.id, got, want: e.value });
 }
 console.log(JSON.stringify({ failures, checked }));

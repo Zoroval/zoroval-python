@@ -18,9 +18,14 @@
     "   string and the shadow, with label. The next rule runs on the result.",
     "Validators: luhn (payment card check digit), verhoeff (Aadhaar check digit).",
     "Fold: an entry with shift maps code point cp to to + (cp - first); without shift every code point in the range maps to to.",
-    "Values that are not strings: walk lists and object values (keys stay); an integer of 10 or more",
-    "digits is redacted when its decimal text matches a rule. Other numbers, booleans and null stay."
+    "Values that are not strings: walk lists and object values; keys are never changed. A string under",
+    "an object key also gets that key as context: the deny_prefix text is the lower-cased key, then",
+    "': ', then the text before the match, cut to the last window characters. List items use the key",
+    "of the list. Integers stay as they are, except an integer of 10 or more digits under a key that",
+    "integer_keys matches (lower-cased key): it becomes the label when its decimal text matches a rule.",
+    "Floats, booleans and null stay."
   ],
+  "integer_keys": "(?<![a-z])(?:phone|mobile|mob|msisdn|tel|telephone|whatsapp|contact|card|aadhaar|aadhar)",
   "labels": [
     "[SECRET]",
     "[EMAIL]",
@@ -279,7 +284,7 @@
       ],
       "deny_prefix": {
         "window": 40,
-        "pattern": "(?<![a-z])(?:pnr|order|booking|ref|reference|invoice|inv|bill|receipt|awb|tracking|track|consignment|shipment|docket|txn|transaction|utr|rrn|ticket|po|sku|policy|claim|account|acct|a/c|serial|imei|batch|lot)(?:[ \\t:#.\\-]*(?:no|num|number|id|code|is|was|=)){0,3}[ \\t:#.\\-=]*$"
+        "pattern": "(?<![a-z])(?:pnr|order|booking|ref|reference|invoice|inv|bill|receipt|awb|tracking|track|consignment|shipment|docket|txn|transaction|utr|rrn|ticket|po|sku|policy|claim|account|acct|a/c|serial|imei|batch|lot|amount|paise|cents|price|total|balance|timestamp|epoch)s?(?:[ \\t:#.\\-=_\"']*(?:(?:pnr|order|booking|ref|reference|invoice|inv|bill|receipt|awb|tracking|track|consignment|shipment|docket|txn|transaction|utr|rrn|ticket|po|sku|policy|claim|account|acct|a/c|serial|imei|batch|lot|amount|paise|cents|price|total|balance|timestamp|epoch)|no|num|number|id|code|is|was)s?){0,3}[ \\t:#.\\-=_\"']*$"
       }
     },
     {
@@ -290,7 +295,7 @@
       "pattern": "(?<![0-9A-Za-z+#_.])(?<![A-Za-z_][/\\-])(?<![0-9][ \\-])(?:(?:91|0)[ \\-]?)?(?:[6-9][0-9]{9}|[6-9][0-9]{4}[ \\-][0-9]{5}|[6-9][0-9]{2}[ \\-][0-9]{3}[ \\-][0-9]{4})(?![0-9A-Za-z])(?![ \\-][0-9])(?![.,][0-9])",
       "deny_prefix": {
         "window": 40,
-        "pattern": "(?<![a-z])(?:pnr|order|booking|ref|reference|invoice|inv|bill|receipt|awb|tracking|track|consignment|shipment|docket|txn|transaction|utr|rrn|ticket|po|sku|policy|claim|account|acct|a/c|serial|imei|batch|lot)(?:[ \\t:#.\\-]*(?:no|num|number|id|code|is|was|=)){0,3}[ \\t:#.\\-=]*$"
+        "pattern": "(?<![a-z])(?:pnr|order|booking|ref|reference|invoice|inv|bill|receipt|awb|tracking|track|consignment|shipment|docket|txn|transaction|utr|rrn|ticket|po|sku|policy|claim|account|acct|a/c|serial|imei|batch|lot|amount|paise|cents|price|total|balance|timestamp|epoch)s?(?:[ \\t:#.\\-=_\"']*(?:(?:pnr|order|booking|ref|reference|invoice|inv|bill|receipt|awb|tracking|track|consignment|shipment|docket|txn|transaction|utr|rrn|ticket|po|sku|policy|claim|account|acct|a/c|serial|imei|batch|lot|amount|paise|cents|price|total|balance|timestamp|epoch)|no|num|number|id|code|is|was)s?){0,3}[ \\t:#.\\-=_\"']*$"
       }
     },
     {

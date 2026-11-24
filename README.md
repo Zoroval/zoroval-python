@@ -99,7 +99,7 @@ Before anything leaves your app, it replaces these values with a label:
 | PAN numbers | `[PAN]` |
 | API keys and tokens with a known prefix (OpenAI, Anthropic, Stripe, Razorpay, GitHub, GitLab, AWS, Slack, Google, Hugging Face, npm, SendGrid, Zoroval), JWTs, bearer tokens and private keys | `[SECRET]` |
 
-It finds these with or without spaces, dashes or line breaks, and in full-width or Indian-script digits. It leaves a 10 or 12 digit number without + alone when a word such as order, PNR, invoice, AWB or tracking comes right before it.
+It finds these with or without spaces, dashes or line breaks, and in full-width or Indian-script digits. It leaves a 10 or 12 digit number without + alone when a word such as order, PNR, invoice, AWB or tracking comes right before it, or when that word is its key, as in `{"pnr": "8123456789"}` or `{"orderId": "234567890124"}`. Numbers stored as integers are left alone unless the key names a phone, mobile, card or Aadhaar field, as in `{"phone": 9876543210}`.
 
 It does not find names, addresses, health details, bank account or UPI IDs, landline numbers without +, or anything not in the table. It matches patterns, so it can miss a value written an unusual way, and it can replace an ID that happens to look like a card or Aadhaar number.
 

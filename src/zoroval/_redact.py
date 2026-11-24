@@ -88,6 +88,7 @@ class Rules:
         self.foldable = re.compile(f"[{ranges}]")
         self.rules = [_Rule(spec) for spec in doc["rules"]]
         self.labels = tuple(doc["labels"])
+        self.integer_keys = re.compile(doc["integer_keys"])
 
 
 def load_rules() -> Rules:
@@ -107,14 +108,18 @@ def rules() -> Rules:
 
 # ---------------------------------------------------------------------------- strings
 
-def redact_text(text: str, rs: Optional[Rules] = None) -> str:
-    """Replace level-1 values in one string with labels. Returns the same object when nothing matched."""
+def redact_text(text: str, rs: Optional[Rules] = None, key: Optional[str] = None) -> str:
+    """Replace level-1 values in one string with labels. Returns the same object when nothing matched.
+
+    key: the object key the string sits under. It is context for deny_prefix, so {"pnr": "8123456789"}
+    is treated like the text "pnr: 8123456789"."""
     if not text:
         return text
     rs = rs or rules()
     shadow = text if text.isascii() or not rs.foldable.search(text) else text.translate(rs.fold)
     same = shadow is text
     passed: dict[Any, bool] = {}
+    context = key.lower() + ": " if key else ""
     for rule in rs.rules:
         pre = rule.prefilter
         if pre is not None:
@@ -134,8 +139,12 @@ def redact_text(text: str, rs: Optional[Rules] = None) -> str:
                 digits = _NOT_DIGIT.sub("", match.group())
                 if not all(check(digits) for check in rule.validators):
                     continue
-            if rule.deny is not None and rule.deny.search(shadow[max(0, start - rule.window):start].lower()):
-                continue
+            if rule.deny is not None:
+                before = shadow[max(0, start - rule.window):start]
+                if context and start < rule.window:
+                    before = (context + before)[-rule.window:]
+                if rule.deny.search(before.lower()):
+                    continue
             out.append(text[last:start])
             out.append(rule.label)
             if not same:
@@ -161,34 +170,38 @@ def redact_text(text: str, rs: Optional[Rules] = None) -> str:
 _UNCHANGED = object()
 
 
-def _walk(value: Any, depth: int, rs: Rules) -> Any:
-    """Returns a redacted copy, or _UNCHANGED. Never mutates `value`."""
+def _walk(value: Any, depth: int, rs: Rules, key: Optional[str] = None) -> Any:
+    """Returns a redacted copy, or _UNCHANGED. Never mutates `value`. `key` is the nearest object key."""
     if isinstance(value, str):
-        new = redact_text(value, rs)
+        new = redact_text(value, rs, key)
         return _UNCHANGED if new is value else new
     if value is None or isinstance(value, (bool, float)):
         return _UNCHANGED
     if isinstance(value, int):
+        # Amounts, ids and timestamps are integers far more often than phone or card numbers are,
+        # so an integer is scanned only under a key that names one (integer_keys).
         if -10 ** (MIN_INT_DIGITS - 1) < value < 10 ** (MIN_INT_DIGITS - 1):
             return _UNCHANGED
+        if not key or not rs.integer_keys.search(key.lower()):
+            return _UNCHANGED
         text = str(value)
-        new = redact_text(text, rs)
+        new = redact_text(text, rs, key)
         return _UNCHANGED if new == text else new
     if depth >= MAX_DEPTH:
         raise RedactionError("value nested too deep to scan")
     if isinstance(value, dict):
         changed: Optional[dict] = None
-        for key, item in value.items():
-            new = _walk(item, depth + 1, rs)
+        for name, item in value.items():
+            new = _walk(item, depth + 1, rs, name if isinstance(name, str) else key)
             if new is not _UNCHANGED:
                 if changed is None:
                     changed = dict(value)
-                changed[key] = new
+                changed[name] = new
         return _UNCHANGED if changed is None else changed
     if isinstance(value, (list, tuple)):
         items: Optional[list] = None
         for i, item in enumerate(value):
-            new = _walk(item, depth + 1, rs)
+            new = _walk(item, depth + 1, rs, key)
             if new is not _UNCHANGED:
                 if items is None:
                     items = list(value)
@@ -202,7 +215,7 @@ def _walk(value: Any, depth: int, rs: Rules) -> Any:
     from ._json import to_plain
     plain = to_plain(value)
     if isinstance(plain, (dict, list, str, int)) and not isinstance(plain, bool):
-        new = _walk(plain, depth + 1, rs)
+        new = _walk(plain, depth + 1, rs, key)
         return _UNCHANGED if new is _UNCHANGED else new
     return _UNCHANGED
 
