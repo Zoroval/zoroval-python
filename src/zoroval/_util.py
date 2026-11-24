@@ -48,6 +48,7 @@ class Counters:
         "bytes_sent",           # compressed bytes on the wire
         "internal_errors",      # SDK bugs caught before they reached the app
         "redact_errors",        # redact hook raised; content was dropped
+        "unserializable_fields",  # a captured value could not be turned into JSON; not sent
         "truncated_fields",     # content fields cut by size caps
         "ungrouped_turns",      # turn() roots with no conversation id
         "logs_exported",

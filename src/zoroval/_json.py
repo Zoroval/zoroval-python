@@ -127,15 +127,20 @@ def apply_redact(redact: Optional[Callable[[Any], Any]], value: Any) -> tuple[An
     return new, bool(changed), True
 
 
-def capture(value: Any, *, capture_content: bool, redact: Optional[Callable[[Any], Any]],
-            limit: int) -> Captured:
+def capture(value: Any, *, redact: Optional[Callable[[Any], Any]], limit: int) -> Captured:
     """Serialize content for a span attribute. Returns text=None when nothing is sent."""
-    if not capture_content or value is None:
+    if value is None:
         return Captured(None, False, 0)
     value, redacted, ok = apply_redact(redact, value)
     if not ok:
         return Captured(None, True, 0)
-    text = dumps(value)
+    try:
+        text = dumps(value)
+    except Exception as error:  # noqa: BLE001  (a value that cannot be serialized is not sent)
+        COUNTERS.add("unserializable_fields")
+        log_once(f"dumps:{type(error).__name__}",
+                 "zoroval: a value could not be serialized (%s); that field was not sent.", type(error).__name__)
+        return Captured(None, redacted, 0)
     text, cut = fit(text, limit)
     return Captured(text, redacted, cut)
 

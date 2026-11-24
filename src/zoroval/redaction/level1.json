@@ -1,0 +1,304 @@
+{
+  "name": "zoroval-redaction-level1",
+  "version": 1,
+  "about": [
+    "Level-1 redaction rules shared by the Zoroval SDKs and ingest. Language neutral: every pattern uses",
+    "only syntax that means the same in Python re and JavaScript RegExp (no \\d, \\w, \\b, named groups or",
+    "inline flags; lookbehinds are fixed width). Compile with no flags (JavaScript: add only g).",
+    "How to apply to one string:",
+    "1. Shadow: if the string has any non-ASCII character, build a copy where each code point listed in",
+    "   fold maps to one ASCII character. Every fold entry is in the Basic Multilingual Plane and maps one",
+    "   character to one character, so offsets in the shadow are offsets in the original (UTF-16 or code",
+    "   points alike). Otherwise the shadow is the string itself.",
+    "2. Run rules in the listed order. For each rule: if prefilter is set and does not match anywhere in",
+    "   the shadow, skip the rule. Otherwise take every non-overlapping match of pattern in the shadow, left",
+    "   to right. Keep a match only if every validator passes on the ASCII digits of the matched shadow",
+    "   text, and, when deny_prefix is set, deny_prefix.pattern does not match the lower-cased shadow text",
+    "   of the deny_prefix.window characters right before the match. Replace each kept match, in both the",
+    "   string and the shadow, with label. The next rule runs on the result.",
+    "Validators: luhn (payment card check digit), verhoeff (Aadhaar check digit).",
+    "Fold: an entry with shift maps code point cp to to + (cp - first); without shift every code point in the range maps to to.",
+    "Values that are not strings: walk lists and object values (keys stay); an integer of 10 or more",
+    "digits is redacted when its decimal text matches a rule. Other numbers, booleans and null stay."
+  ],
+  "labels": [
+    "[SECRET]",
+    "[EMAIL]",
+    "[CARD]",
+    "[PHONE]",
+    "[AADHAAR]",
+    "[PAN]"
+  ],
+  "fold": [
+    {
+      "from": [
+        65281,
+        65374
+      ],
+      "to": 33,
+      "shift": true,
+      "what": "full-width ASCII (digits, letters, @, +, -, .)"
+    },
+    {
+      "from": [
+        1632,
+        1641
+      ],
+      "to": 48,
+      "shift": true,
+      "what": "Arabic-Indic digits"
+    },
+    {
+      "from": [
+        1776,
+        1785
+      ],
+      "to": 48,
+      "shift": true,
+      "what": "Extended Arabic-Indic digits"
+    },
+    {
+      "from": [
+        2406,
+        2415
+      ],
+      "to": 48,
+      "shift": true,
+      "what": "Devanagari digits"
+    },
+    {
+      "from": [
+        2534,
+        2543
+      ],
+      "to": 48,
+      "shift": true,
+      "what": "Bengali digits"
+    },
+    {
+      "from": [
+        2662,
+        2671
+      ],
+      "to": 48,
+      "shift": true,
+      "what": "Gurmukhi digits"
+    },
+    {
+      "from": [
+        2790,
+        2799
+      ],
+      "to": 48,
+      "shift": true,
+      "what": "Gujarati digits"
+    },
+    {
+      "from": [
+        2918,
+        2927
+      ],
+      "to": 48,
+      "shift": true,
+      "what": "Odia digits"
+    },
+    {
+      "from": [
+        3046,
+        3055
+      ],
+      "to": 48,
+      "shift": true,
+      "what": "Tamil digits"
+    },
+    {
+      "from": [
+        3174,
+        3183
+      ],
+      "to": 48,
+      "shift": true,
+      "what": "Telugu digits"
+    },
+    {
+      "from": [
+        3302,
+        3311
+      ],
+      "to": 48,
+      "shift": true,
+      "what": "Kannada digits"
+    },
+    {
+      "from": [
+        3430,
+        3439
+      ],
+      "to": 48,
+      "shift": true,
+      "what": "Malayalam digits"
+    },
+    {
+      "from": [
+        3664,
+        3673
+      ],
+      "to": 48,
+      "shift": true,
+      "what": "Thai digits"
+    },
+    {
+      "from": [
+        160,
+        160
+      ],
+      "to": 32,
+      "what": "no-break space"
+    },
+    {
+      "from": [
+        8192,
+        8202
+      ],
+      "to": 32,
+      "what": "typographic spaces"
+    },
+    {
+      "from": [
+        8203,
+        8205
+      ],
+      "to": 32,
+      "what": "zero-width space, non-joiner, joiner"
+    },
+    {
+      "from": [
+        8288,
+        8288
+      ],
+      "to": 32,
+      "what": "word joiner"
+    },
+    {
+      "from": [
+        8239,
+        8239
+      ],
+      "to": 32,
+      "what": "narrow no-break space"
+    },
+    {
+      "from": [
+        8287,
+        8287
+      ],
+      "to": 32,
+      "what": "medium mathematical space"
+    },
+    {
+      "from": [
+        12288,
+        12288
+      ],
+      "to": 32,
+      "what": "ideographic space"
+    },
+    {
+      "from": [
+        65279,
+        65279
+      ],
+      "to": 32,
+      "what": "zero-width no-break space (BOM)"
+    },
+    {
+      "from": [
+        173,
+        173
+      ],
+      "to": 45,
+      "what": "soft hyphen"
+    },
+    {
+      "from": [
+        8208,
+        8213
+      ],
+      "to": 45,
+      "what": "hyphens and dashes"
+    },
+    {
+      "from": [
+        8722,
+        8722
+      ],
+      "to": 45,
+      "what": "minus sign"
+    }
+  ],
+  "rules": [
+    {
+      "id": "secret",
+      "label": "[SECRET]",
+      "covers": "API keys and tokens with a known prefix, bearer tokens, private key blocks",
+      "prefilter": "sk-|sk_|rk_|whsec_|rzp_|gh[pousr]_|github_pat_|glpat-|AKIA|ASIA|xox|AIza|ya29\\.|hf_|npm_|SG\\.|zv_ingest_|eyJ|earer |Basic |-----BEGIN",
+      "pattern": "(?:-----BEGIN [A-Z ]{0,30}PRIVATE KEY-----[A-Za-z0-9+/=\\s\\\\]{0,16384}(?:-----END [A-Z ]{0,30}PRIVATE KEY-----)?|(?<=[Bb]earer )[A-Za-z0-9._~+/\\-]{20,}=*|(?<=[Aa]uthorization: Basic )[A-Za-z0-9+/]{16,}={0,2}|(?<![A-Za-z0-9_\\-])(?:sk-[A-Za-z0-9_\\-]{20,}|(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}|whsec_[A-Za-z0-9]{24,}|rzp_(?:live|test)_[A-Za-z0-9]{14,}|gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,}|glpat-[A-Za-z0-9_\\-]{20,}|(?:AKIA|ASIA)[0-9A-Z]{16}|xox[abposr]-[A-Za-z0-9\\-]{10,}|AIza[0-9A-Za-z_\\-]{35}|ya29\\.[A-Za-z0-9_\\-]{20,}|hf_[A-Za-z0-9]{30,}|npm_[A-Za-z0-9]{36}|SG\\.[A-Za-z0-9_\\-]{22}\\.[A-Za-z0-9_\\-]{43}|zv_ingest_[a-z2-7]{12}_[0-9A-Za-z]{20,64}|eyJ[A-Za-z0-9_\\-]{8,}\\.eyJ[A-Za-z0-9_\\-]{8,}\\.[A-Za-z0-9_\\-]*)(?![A-Za-z0-9_\\-]))"
+    },
+    {
+      "id": "email",
+      "label": "[EMAIL]",
+      "covers": "email addresses",
+      "prefilter": "@",
+      "pattern": "(?<![A-Za-z0-9])[A-Za-z0-9][A-Za-z0-9._%+\\-]{0,63}@(?:[A-Za-z0-9\\-]{1,63}\\.){1,8}[A-Za-z]{2,24}(?![A-Za-z0-9\\-])"
+    },
+    {
+      "id": "card",
+      "label": "[CARD]",
+      "covers": "payment card numbers, 13 to 19 digits, card prefixes, Luhn check",
+      "prefilter": "[0-9]{4}",
+      "pattern": "(?<![0-9A-Za-z])(?=[3-6]|2[2-7]|8[12])(?:[0-9]{4}(?:(?:[ \\t\\-]|\\r?\\n)[0-9]{4}){3}(?:[ \\t\\-]|\\r?\\n)[0-9]{3}|[0-9]{4}(?:(?:[ \\t\\-]|\\r?\\n)[0-9]{4}){3}|[0-9]{4}(?:[ \\t\\-]|\\r?\\n)[0-9]{6}(?:[ \\t\\-]|\\r?\\n)[0-9]{4,5}|[0-9]{13,19})(?![0-9A-Za-z])",
+      "validators": [
+        "luhn"
+      ]
+    },
+    {
+      "id": "phone_international",
+      "label": "[PHONE]",
+      "covers": "phone numbers with a leading + and country code, 8 to 15 digits",
+      "prefilter": "\\+",
+      "pattern": "(?<![0-9A-Za-z+])\\+[1-9](?:[ \\-.]?\\(?[0-9]\\)?){7,14}(?![0-9])"
+    },
+    {
+      "id": "aadhaar",
+      "label": "[AADHAAR]",
+      "covers": "Aadhaar numbers, 12 digits, Verhoeff check",
+      "prefilter": "[0-9]{4}",
+      "pattern": "(?<![0-9A-Za-z])(?<![0-9][ \\-])(?<![0-9A-Za-z]-)[2-9][0-9]{3}(?:(?:[ \\t\\-]|\\r?\\n)?[0-9]{4}){2}(?![0-9A-Za-z])(?![ \\-][0-9])",
+      "validators": [
+        "verhoeff"
+      ],
+      "deny_prefix": {
+        "window": 40,
+        "pattern": "(?<![a-z])(?:pnr|order|booking|ref|reference|invoice|inv|bill|receipt|awb|tracking|track|consignment|shipment|docket|txn|transaction|utr|rrn|ticket|po|sku|policy|claim|account|acct|a/c|serial|imei|batch|lot)(?:[ \\t:#.\\-]*(?:no|num|number|id|code|is|was|=)){0,3}[ \\t:#.\\-=]*$"
+      }
+    },
+    {
+      "id": "phone_india",
+      "label": "[PHONE]",
+      "covers": "Indian mobile numbers without +, optional 0 or 91 prefix",
+      "prefilter": "[0-9]{3}",
+      "pattern": "(?<![0-9A-Za-z+#_.])(?<![A-Za-z_][/\\-])(?<![0-9][ \\-])(?:(?:91|0)[ \\-]?)?(?:[6-9][0-9]{9}|[6-9][0-9]{4}[ \\-][0-9]{5}|[6-9][0-9]{2}[ \\-][0-9]{3}[ \\-][0-9]{4})(?![0-9A-Za-z])(?![ \\-][0-9])(?![.,][0-9])",
+      "deny_prefix": {
+        "window": 40,
+        "pattern": "(?<![a-z])(?:pnr|order|booking|ref|reference|invoice|inv|bill|receipt|awb|tracking|track|consignment|shipment|docket|txn|transaction|utr|rrn|ticket|po|sku|policy|claim|account|acct|a/c|serial|imei|batch|lot)(?:[ \\t:#.\\-]*(?:no|num|number|id|code|is|was|=)){0,3}[ \\t:#.\\-=]*$"
+      }
+    },
+    {
+      "id": "pan",
+      "label": "[PAN]",
+      "covers": "Indian PAN numbers (AAAAA9999A)",
+      "prefilter": "[0-9]{4}",
+      "pattern": "(?<![0-9A-Za-z])(?:[A-Z]{3}[ABCFGHJLPT][A-Z][0-9]{4}[A-Z]|[a-z]{3}[abcfghjlpt][a-z][0-9]{4}[a-z])(?![0-9A-Za-z])"
+    }
+  ]
+}

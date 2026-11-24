@@ -76,12 +76,38 @@ with zoroval.trace("nightly-report"):
 | `@zoroval.step`, `@zoroval.tool` | A custom step or tool run. |
 | `zoroval.flush()` | Sends what is queued. Call it at the end of serverless handlers. |
 
-Settings: `ZOROVAL_INGEST_KEY`, `ZOROVAL_SERVICE_NAME`, `ZOROVAL_ENVIRONMENT`, `ZOROVAL_RELEASE`, `ZOROVAL_CAPTURE_CONTENT`, `ZOROVAL_SAMPLE_RATE`, `ZOROVAL_ENABLED`.
+Settings: `ZOROVAL_INGEST_KEY`, `ZOROVAL_SERVICE_NAME`, `ZOROVAL_ENVIRONMENT`, `ZOROVAL_RELEASE`, `ZOROVAL_SAMPLE_RATE`, `ZOROVAL_ENABLED`.
 
 ## Privacy
 
-- Prompts and outputs are sent by default. `zoroval.init(capture_content=False)` drops prompts, outputs and tool-call arguments.
-- `zoroval.init(redact=fn)` passes prompts and outputs through your function before they are sent. If `fn` raises, that field is dropped.
+Prompts, outputs and tool calls are sent as they are unless you turn on redaction.
+
+**Built-in redaction** is off by default. Turn it on with:
+
+```python
+zoroval.init(redact="basic")
+```
+
+Before anything leaves your app, it replaces these values with a label:
+
+| Value | Label |
+|---|---|
+| Payment card numbers: 13 to 19 digits that start like a card and pass the card check digit | `[CARD]` |
+| Email addresses | `[EMAIL]` |
+| Indian mobile numbers, with or without +91 or 0, and any phone number written with + and a country code | `[PHONE]` |
+| Aadhaar numbers: 12 digits that pass the Aadhaar check digit | `[AADHAAR]` |
+| PAN numbers | `[PAN]` |
+| API keys and tokens with a known prefix (OpenAI, Anthropic, Stripe, Razorpay, GitHub, GitLab, AWS, Slack, Google, Hugging Face, npm, SendGrid, Zoroval), JWTs, bearer tokens and private keys | `[SECRET]` |
+
+It finds these with or without spaces, dashes or line breaks, and in full-width or Indian-script digits. It leaves a 10 or 12 digit number without + alone when a word such as order, PNR, invoice, AWB or tracking comes right before it.
+
+It does not find names, addresses, health details, bank account or UPI IDs, landline numbers without +, or anything not in the table. It matches patterns, so it can miss a value written an unusual way, and it can replace an ID that happens to look like a card or Aadhaar number.
+
+**Your own function:** `zoroval.init(redact=fn)` passes each prompt, output and tool call through `fn`. To use both, `zoroval.init(redact=["basic", fn])`: the built-in runs first and `fn` gets its output. If `fn` raises or returns `None`, that field is dropped, never sent raw.
+
+- Redaction also covers the standard prompt and output fields of other tools' spans. The built-in also cleans metadata and error messages. User ids, conversation ids, tags and span names are sent as you set them.
+- While redaction is on, GenAI log events are not sent.
+- Redaction runs in your process. The built-in adds about 15 ms per 100 KB of text on a laptop, and nothing when it is off.
 - Only LLM spans are sent. Your app's HTTP, database and other spans stay with you.
 
 ## License

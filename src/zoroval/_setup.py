@@ -137,21 +137,22 @@ def _attach_logs(cfg: _config.Config, transport: Transport) -> Any:
 
 
 def init(api_key: Optional[str] = None, *, ingest_url: Optional[str] = None, service_name: Optional[str] = None,
-         environment: Optional[str] = None, release: Optional[str] = None, capture_content: Optional[bool] = None,
-         redact: Optional[Callable[[Any], Any]] = None, sample_rate: Optional[float] = None,
+         environment: Optional[str] = None, release: Optional[str] = None,
+         redact: Any = None, sample_rate: Optional[float] = None,
          instrument: Any = True, tracer_provider: Any = None, enabled: Optional[bool] = None,
          **options: Any) -> bool:
     """Start Zoroval tracing. Safe to call more than once; never raises.
 
     api_key: defaults to the ZOROVAL_INGEST_KEY environment variable.
     instrument: True (OpenAI and Anthropic when installed), False, or a list such as ["openai"].
-    capture_content: send prompts and outputs (default True). redact: callable(value) -> value.
+    redact: off by default. "basic" replaces card numbers, emails, phone numbers, Aadhaar, PAN and
+    API keys with labels; a function(value) -> value runs your own; ["basic", fn] runs both, basic first.
     sample_rate: head sampling, 0.0 to 1.0, kept whole per conversation (or per trace).
     Returns True when tracing is active.
     """
     try:
         return _init(api_key=api_key, ingest_url=ingest_url, service_name=service_name, environment=environment,
-                     release=release, capture_content=capture_content, redact=redact, sample_rate=sample_rate,
+                     release=release, redact=redact, sample_rate=sample_rate,
                      instrument=instrument, tracer_provider=tracer_provider, enabled=enabled, **options)
     except TypeError:
         raise  # a wrong argument name is a coding error the developer must see
@@ -176,6 +177,13 @@ def _init(*, instrument: Any, tracer_provider: Any, **kwargs: Any) -> bool:
         if _config.key_id_of(cfg.api_key) is None:
             log_once("bad-key", "zoroval: ZOROVAL_INGEST_KEY does not look like a Zoroval ingest key "
                      "(zv_ingest_...). Tracing is off. Run `zoroval doctor`.")
+            return False
+
+        if not _config._env_bool("ZOROVAL_CAPTURE_CONTENT", True):
+            # Content-off was removed in 0.3.0. Starting anyway would send what this app chose not to.
+            log_once("capture-content-removed", "zoroval: ZOROVAL_CAPTURE_CONTENT is no longer supported "
+                     "(removed in 0.3.0). Tracing is off so prompts and outputs are not sent. Remove the "
+                     "variable, and use zoroval.init(redact=...) to clean content before it is sent.")
             return False
 
         if not _config.ingest_url_ok(cfg.ingest_url):
@@ -212,8 +220,8 @@ def _init(*, instrument: Any, tracer_provider: Any, **kwargs: Any) -> bool:
         _state.set_state(state)
         if owns:
             _install_set_provider_hook()
-        # Log events hold raw content and cannot be redacted here, so they stay off with either control.
-        if cfg.export_logs and cfg.capture_content and cfg.redact is None:
+        # Log events hold raw content and cannot be redacted here, so they stay off when redact is set.
+        if cfg.export_logs and cfg.redact is None:
             state.log_processor = _attach_logs(cfg, transport)
         _instrument(state, instrument)
         if not _atexit_registered:
@@ -317,5 +325,5 @@ def status() -> dict[str, Any]:
         out["export_state"] = state.transport.export_state()
         out["export_resumes_in_s"] = round(state.transport.hold_remaining(), 1)
         out["sample_rate"] = state.cfg.sample_rate
-        out["capture_content"] = state.cfg.capture_content
+        out["redact"] = state.cfg.redact_mode
     return out
