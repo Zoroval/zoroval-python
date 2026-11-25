@@ -9,6 +9,11 @@
   ],
   "must_redact": [
     {
+      "id": "card_after_sentence_dot",
+      "text": "Paid.4111 1111 1111 1111 was declined.",
+      "expect": "Paid.[CARD] was declined."
+    },
+    {
       "id": "card_visa_spaces",
       "text": "My card is 4111 1111 1111 1111, expiry 08/29.",
       "expect": "My card is [CARD], expiry 08/29."
@@ -510,6 +515,26 @@
     }
   ],
   "must_keep": [
+    {
+      "id": "decimal_score",
+      "kind": "score",
+      "text": "LlamaIndex score=0.6958064193794513 for doc-refunds"
+    },
+    {
+      "id": "decimal_price",
+      "kind": "amount",
+      "text": "Unit price 12.4111111111111111 USD"
+    },
+    {
+      "id": "decimal_12dp",
+      "kind": "amount",
+      "text": "x=274512.298765432101 metres"
+    },
+    {
+      "id": "decimal_similarity",
+      "kind": "score",
+      "text": "similarity: 0.5555555555554444, rank 2"
+    },
     {
       "id": "amazon_order",
       "kind": "order_id",
