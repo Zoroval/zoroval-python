@@ -199,3 +199,6 @@ def test_provider_name_from_base_url():
     assert _provider_name(_Resource("api.anthropic.com")) == "anthropic"
     assert _provider_name(_Resource("127.0.0.1")) == "openai"
     assert _provider_name(_Resource("evil-api.groq.com.example")) == "openai"
+    assert _provider_name(_Resource("bedrock-runtime.us-west-2.amazonaws.com")) == "aws.bedrock"
+    assert _provider_name(_Resource("bedrock-mantle.us-east-1.api.aws")) == "aws.bedrock"
+    assert _provider_name(_Resource("abc123.execute-api.us-east-1.amazonaws.com")) == "openai"

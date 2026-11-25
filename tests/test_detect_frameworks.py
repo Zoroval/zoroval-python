@@ -16,8 +16,7 @@ def _scan(tmp_path, requirements, source=APP):
 
 
 @pytest.mark.parametrize("requirements", ["openai-agents\n", "langchain\nlangchain-anthropic\n",
-                                          "langgraph\nlangchain-openai\n", "llama-index-core\nllama-index-llms-openai\n",
-                                          "pydantic-ai-slim[openai]\n"])
+                                          "langgraph\nlangchain-openai\n", "llama-index-core\nllama-index-llms-openai\n"])
 def test_frameworks_are_case_1(tmp_path, requirements):
     report = _scan(tmp_path, requirements)
     assert 1 in report["cases"]
@@ -55,3 +54,16 @@ def test_gemini_already_instrumented(tmp_path):
     report = _scan(tmp_path, "google-genai\nopeninference-instrumentation-google-genai\nopentelemetry-sdk\n")
     assert not any("GoogleGenAIInstrumentor" in step for step in report["plan"])
     assert any("zoroval.init()" in step for step in report["plan"])
+
+
+def test_pydantic_ai_counts_only_on_openai_or_anthropic(tmp_path):
+    source = "from pydantic_ai import Agent\nagent = Agent('openai:gpt-4o-mini')\n" + APP
+    report = _scan(tmp_path, "pydantic-ai-slim[openai]\n", source)
+    assert 1 in report["cases"] and report["tracing"]["openai"] is True
+
+
+def test_pydantic_ai_on_another_provider_is_not_promised(tmp_path):
+    source = "from pydantic_ai import Agent\nagent = Agent('google-gla:gemini-2.5-flash')\n" + APP
+    report = _scan(tmp_path, "pydantic-ai-slim[google]\n", source)
+    assert 1 not in report["cases"]
+    assert any("Pydantic AI found" in note for note in report["notes"])

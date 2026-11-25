@@ -1,8 +1,10 @@
 """LiteLLM keeps its conversation: `callbacks=["otel"]` makes LiteLLM's spans in its logging thread pool.
-For a streamed call that work was handed over without the caller's context, so the span had no parent
-and no `zoroval.conversation` id, and one chat split into several traces (found 2026-11-25). LiteLLM
-already copies the context for non-streamed calls; this does the same for every task its logging pool
-runs. The caller's context is copied per task, never shared or taken from another thread.
+For a streamed call that work was handed over without the caller's context, so the span had no
+`zoroval.conversation` id, and one chat split into several traces (found 2026-11-25). Each task in that
+pool now runs in a copy of the caller's context (copied per task, never shared or taken from another
+thread), without the caller's current OpenTelemetry span: with a parent span LiteLLM writes onto that
+span instead of making its own, and by the time the pool runs it has usually ended, so the reply would
+be lost. LiteLLM keeps making its own span, as before, now with the conversation.
 """
 
 from __future__ import annotations
@@ -92,7 +94,7 @@ def _patch(module: Any) -> bool:
         except Exception as error:  # noqa: BLE001
             internal_error("litellm.copy_context", error)
             return submit(fn, *args, **kwargs)
-        return submit(ctx.run, fn, *args, **kwargs)
+        return submit(ctx.run, _without_current_span, fn, *args, **kwargs)
 
     setattr(submit_in_context, MARK, True)
     try:
@@ -102,6 +104,15 @@ def _patch(module: Any) -> bool:
         return False
     _patched.append(executor)
     return True
+
+
+def _without_current_span(fn: Any, *args: Any, **kwargs: Any) -> Any:
+    from opentelemetry import context as otel_context
+    token = otel_context.attach(otel_context.Context())
+    try:
+        return fn(*args, **kwargs)
+    finally:
+        otel_context.detach(token)
 
 
 def uninstrument() -> None:

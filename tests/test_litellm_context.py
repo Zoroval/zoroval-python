@@ -76,3 +76,15 @@ def test_patched_when_litellm_is_imported_after_init(tmp_path, monkeypatch):
         integration.uninstrument()
         for name in ("litellm", "litellm.litellm_core_utils", integration.MODULE):
             sys.modules.pop(name, None)
+
+
+def test_task_runs_without_the_callers_span(pool):
+    # With a current span LiteLLM writes onto it instead of making its own; it has usually ended by then.
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+    integration.instrument()
+    tracer = TracerProvider().get_tracer("app")
+    with _context.conversation("chat-7f3a"), tracer.start_as_current_span("request"):
+        future = pool.submit(lambda: (trace.get_current_span().get_span_context().is_valid,
+                                      _context.current_conversation_id()))
+    assert future.result() == (False, "chat-7f3a")

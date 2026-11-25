@@ -240,3 +240,27 @@ def test_anthropic_with_raw_response_stream(spans):
     assert kinds[0] == "message_start"
     (span,) = _llm_spans(spans)
     assert _output(span)[0]["parts"] == [{"type": "text", "content": "Bonjour"}]
+
+
+def test_anthropic_async_raw_and_streaming(spans):
+    anthropic = pytest.importorskip("anthropic")
+    httpx = _httpx()
+
+    async def run():
+        client = anthropic.AsyncAnthropic(api_key="sk-test", base_url="http://fake.test",
+                                          http_client=httpx.AsyncClient(transport=httpx.MockTransport(_anthropic_handler)))
+        raw = await client.messages.with_raw_response.create(model="claude-x", max_tokens=10, messages=MSGS, stream=True)
+        parsed = raw.parse()  # async in anthropic 2.x, sync in older releases
+        if asyncio.iscoroutine(parsed):
+            parsed = await parsed
+        first = [e.type async for e in parsed]
+        async with client.messages.with_streaming_response.create(
+                model="claude-x", max_tokens=10, messages=MSGS, stream=True) as resp:
+            stream = await resp.parse()
+            second = [e.type async for e in stream]
+        return first, second
+
+    first, second = asyncio.run(run())
+    assert first[0] == second[0] == "message_start"
+    outputs = [_output(s)[0]["parts"] for s in _llm_spans(spans)]
+    assert outputs == [[{"type": "text", "content": "Bonjour"}]] * 2

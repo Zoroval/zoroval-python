@@ -73,8 +73,19 @@ def test_finished_llm_run_and_other_tracers_ignored(langchain):
         _var.reset(token)
 
 
-def test_llama_index_llm_span_before_its_kind_is_set():
+@pytest.fixture
+def llama_index(monkeypatch):
+    module = types.ModuleType("llama_index.core.base.llms.base")
+    module.BaseLLM = type("BaseLLM", (), {})
+    module.OpenAI = type("OpenAI", (module.BaseLLM,), {})
+    monkeypatch.setitem(sys.modules, "llama_index.core.base.llms.base", module)
+    return module
+
+
+def test_llama_index_llm_span_before_its_kind_is_set(llama_index):
     tracer = TracerProvider().get_tracer("openinference.instrumentation.llama_index")
+    with tracer.start_as_current_span("CondensePlusContextChatEngine.stream_chat"):
+        assert foreign_llm_span_active() is False  # a chat engine, not an LLM: a raw call under it is ours
     with tracer.start_as_current_span("OpenAI.stream_chat"):
         assert foreign_llm_span_active() is True
     with tracer.start_as_current_span("FunctionTool.call"):

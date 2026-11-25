@@ -314,6 +314,13 @@ def scan(root: Path) -> dict[str, Any]:
             for sub in ("google.genai", "google.generativeai"):
                 if (module == sub or module.startswith(sub + ".")) and rel not in imports.setdefault(sub, []):
                     imports[sub].append(rel)
+            for provider in ("openai", "anthropic"):
+                if module.startswith((f"pydantic_ai.models.{provider}", f"pydantic_ai.providers.{provider}")):
+                    imports.setdefault(f"pydantic_ai.{provider}", []).append(rel)
+        for provider in ("openai", "anthropic"):  # Agent("openai:gpt-4o") names the model in a string
+            if "pydantic_ai" in visitor.imports or any(m.startswith("pydantic_ai") for m in visitor.imports):
+                if re.search(rf"""["']{provider}(-responses|-chat)?:""", source):
+                    imports.setdefault(f"pydantic_ai.{provider}", []).append(rel)
         for line, call in visitor.calls:
             provider, api = call.split(":", 1)
             report["llm_calls"].append({"file": rel, "line": line, "provider": provider, "api": api})
@@ -419,10 +426,12 @@ def scan(root: Path) -> dict[str, Any]:
 
 
 # Frameworks whose OpenAI or Anthropic calls go through the official clients, so zoroval.init() records them.
+# Pydantic AI can run on any provider: it counts only with an OpenAI or Anthropic model string or import.
 FRAMEWORK_OPENAI = ("langchain-openai", "llama-index-llms-openai", "llama-index-llms-azure-openai",
-                    "llama-index-llms-openai-like", "openai-agents", "pydantic-ai", "pydantic-ai-slim")
-FRAMEWORK_ANTHROPIC = ("langchain-anthropic", "llama-index-llms-anthropic", "pydantic-ai", "pydantic-ai-slim")
-FRAMEWORK_IMPORTS = {"langchain_openai": "openai", "langchain_anthropic": "anthropic", "pydantic_ai": "both"}
+                    "llama-index-llms-openai-like", "openai-agents")
+FRAMEWORK_ANTHROPIC = ("langchain-anthropic", "llama-index-llms-anthropic")
+FRAMEWORK_IMPORTS = {"langchain_openai": "openai", "langchain_anthropic": "anthropic", "pydantic_ai.openai": "openai",
+                     "pydantic_ai.anthropic": "anthropic"}
 # OpenLLMetry (Traceloop) instrumentors for LLM providers and frameworks.
 OPENLLMETRY = ("openai", "anthropic", "langchain", "llamaindex", "bedrock", "cohere", "mistralai", "groq", "ollama",
                "vertexai", "google-generativeai", "together", "replicate", "watsonx", "sagemaker", "alephalpha",
@@ -449,6 +458,10 @@ def _classify(report: dict[str, Any], py: dict[str, str], js: dict[str, str], im
     uses_anthropic = _has(py, "anthropic") or "anthropic" in imports
     frameworks = sorted({p for p in FRAMEWORK_OPENAI + FRAMEWORK_ANTHROPIC if _has(py, p)}
                         | {m for m in FRAMEWORK_IMPORTS if m in imports})
+    if _has(py, "pydantic-ai", "pydantic-ai-slim") or "pydantic_ai" in imports:
+        if not any(m.startswith("pydantic_ai.") for m in frameworks):
+            notes.append("Pydantic AI found: zoroval.init() records it when its model is OpenAI or Anthropic "
+                         "(\"openai:...\", \"anthropic:...\"). Other providers need their own instrumentation.")
     if frameworks:
         uses_openai = uses_openai or any(_has(py, p) for p in FRAMEWORK_OPENAI) or any(
             FRAMEWORK_IMPORTS[m] in ("openai", "both") for m in frameworks if m in FRAMEWORK_IMPORTS)

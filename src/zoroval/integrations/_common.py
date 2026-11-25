@@ -73,10 +73,28 @@ def foreign_llm_span_active() -> bool:
         return True
     if scope_name.startswith("openinference.instrumentation.llama_index") and \
             "openinference.span.kind" not in attrs:
-        method = str(getattr(span, "name", "") or "").rpartition(".")[2]
-        if method in _LLAMA_INDEX_LLM_METHODS:
+        owner, _, method = str(getattr(span, "name", "") or "").rpartition(".")
+        if method in _LLAMA_INDEX_LLM_METHODS and _llama_index_llm_class(owner):
             return True
     return False
+
+
+def _llama_index_llm_class(name: str) -> bool:
+    """Is `name` a LlamaIndex LLM class? Chat engines and agents also have chat() and stream_chat()."""
+    import sys
+    module = sys.modules.get("llama_index.core.base.llms.base")
+    base = getattr(module, "BaseLLM", None) if module is not None else None
+    if base is None:
+        return False
+    seen: set = set()
+    todo = [base]
+    while todo:
+        cls = todo.pop()
+        for sub in cls.__subclasses__():
+            if sub not in seen:
+                seen.add(sub)
+                todo.append(sub)
+    return any(cls.__name__ == name for cls in seen)
 
 
 def _langchain_llm_run_traced() -> bool:
@@ -453,7 +471,6 @@ _PROVIDER_HOSTS = (
     ("api.perplexity.ai", "perplexity"),
     ("generativelanguage.googleapis.com", "gcp.gemini"),
     ("aiplatform.googleapis.com", "gcp.vertex_ai"),
-    ("amazonaws.com", "aws.bedrock"),
     ("api.together.xyz", "together_ai"),
     ("api.together.ai", "together_ai"),
     ("api.fireworks.ai", "fireworks"),
@@ -471,6 +488,8 @@ def provider_from_host(host: Any, default: str) -> str:
     if not isinstance(host, str) or not host:
         return default
     host = host.lower().rstrip(".")
+    if host.startswith("bedrock") and host.endswith((".amazonaws.com", ".api.aws")):
+        return "aws.bedrock"  # bedrock-runtime.<region>.amazonaws.com, bedrock-mantle.<region>.api.aws
     for suffix, name in _PROVIDER_HOSTS:
         if host == suffix or host.endswith("." + suffix):
             return name

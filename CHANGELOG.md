@@ -15,8 +15,8 @@
 - Streams read through `with_raw_response` or `with_streaming_response` (OpenAI and Anthropic) now record their reply. The OpenAI Agents SDK's streamed runs and LangChain's ChatAnthropic streams used this path and lost it.
 - No second span when OpenInference's LangChain or LlamaIndex instrumentor already records the call. A direct client call inside a tool is still recorded.
 - `zoroval.init()` creates an OpenTelemetry LoggerProvider when the app has none, so instrumentors that send content as log events (OpenTelemetry botocore, google-genai) are exported. An app that sets its own LoggerProvider later keeps its exporters. Not done when `redact` is set.
-- LiteLLM with `callbacks=["otel"]`: streamed calls keep their conversation, so one chat is no longer split into several traces.
-- `zoroval detect`: LangChain, LlamaIndex, OpenAI Agents SDK and Pydantic AI apps get `zoroval.init()` in their plan; OpenLLMetry instrumentors for more providers are recognised; a Gemini (google-genai) app gets `zoroval.init()` and the instrumentor to add.
+- LiteLLM with `callbacks=["otel"]`: streamed calls keep their conversation, so one chat is no longer split into several traces. Their spans are made as before.
+- `zoroval detect`: LangChain, LlamaIndex and OpenAI Agents SDK apps, and Pydantic AI apps on OpenAI or Anthropic, get `zoroval.init()` in their plan; OpenLLMetry instrumentors for more providers are recognised; a Gemini (google-genai) app gets `zoroval.init()` and the instrumentor to add.
 
 ## 0.3.0
 
