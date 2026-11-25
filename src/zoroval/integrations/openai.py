@@ -8,6 +8,7 @@ GenAI semantic conventions; content goes to gen_ai.input.messages and gen_ai.out
 from __future__ import annotations
 
 import functools
+import json
 from typing import Any, Optional
 
 from .. import _context, _json
@@ -225,6 +226,28 @@ class _ChatStreamState:
 
 # ---------------------------------------------------------------------------- Responses
 
+# OpenAI's built-in tools (web search, file search, code interpreter, MCP, ...) run inside OpenAI: one output item
+# per call, with the query or code in a field of its own and no separate result item.
+_BUILTIN_ARGS = {"web_search_call": "action", "file_search_call": "queries", "code_interpreter_call": "code",
+                 "computer_call": "action", "local_shell_call": "action", "mcp_call": "arguments",
+                 "image_generation_call": ""}
+
+
+def _builtin_call(kind: Any, item: Any) -> Optional[dict]:
+    if not isinstance(kind, str) or not kind.endswith("_call") or kind in ("function_call", "custom_tool_call"):
+        return None
+    name = str(get(item, "name") or "mcp") if kind == "mcp_call" else kind[:-len("_call")]
+    field = _BUILTIN_ARGS.get(kind, "action")
+    raw = get(item, field) if field else None
+    if raw is None:
+        args = "{}"
+    elif isinstance(raw, str):
+        args = raw
+    else:
+        args = json.dumps(_json.to_plain(raw), separators=(",", ":"), ensure_ascii=False, default=str)
+    return {"type": "tool_call", "id": get(item, "id"), "name": name, "arguments": args}
+
+
 def responses_input_messages(value: Any) -> list[dict]:
     if value is None or not given(value):
         return []
@@ -248,6 +271,8 @@ def responses_input_messages(value: Any) -> list[dict]:
             out.append({"role": get(item, "role", "user"), "parts": _content_parts(get(item, "content"))})
         elif kind == "reasoning":
             continue
+        elif _builtin_call(kind, item):
+            out.append({"role": "assistant", "parts": [_builtin_call(kind, item)]})
         else:
             out.append({"role": "unknown", "parts": [{"type": str(kind)}]})
     return out
@@ -269,6 +294,10 @@ def _responses_output(response: Any) -> tuple[list[dict], list[dict]]:
             summary = " ".join(get(s, "text") or "" for s in get(item, "summary") or [])
             if summary:
                 parts.append({"type": "reasoning", "content": summary})
+        elif _builtin_call(kind, item):
+            call = _builtin_call(kind, item)
+            calls.append({"id": call["id"], "name": call["name"], "arguments": call["arguments"]})
+            parts.append(call)
         elif kind:
             parts.append({"type": str(kind)})
     return parts, calls
