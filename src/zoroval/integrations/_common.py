@@ -43,8 +43,18 @@ def get(obj: Any, key: str, default: Any = None) -> Any:
     return value if given(value) else default
 
 
+# OpenInference's LlamaIndex handler names a span after the LLM method and sets its kind only at the end.
+_LLAMA_INDEX_LLM_METHODS = {"chat", "achat", "stream_chat", "astream_chat", "complete", "acomplete",
+                            "stream_complete", "astream_complete"}
+
+
 def foreign_llm_span_active() -> bool:
-    """True when the current span is an open LLM-call span from another instrumentation."""
+    """True when another instrumentation is already recording this LLM call."""
+    try:
+        if _langchain_llm_run_traced():
+            return True
+    except Exception as error:  # noqa: BLE001
+        internal_error("foreign.langchain", error)
     span = otel_trace.get_current_span()
     if not span.is_recording() or getattr(span, "end_time", None) is not None:
         return False
@@ -61,6 +71,43 @@ def foreign_llm_span_active() -> bool:
         return True
     if attrs.get("gen_ai.operation.name") in ("chat", "text_completion", "generate_content"):
         return True
+    if scope_name.startswith("openinference.instrumentation.llama_index") and \
+            "openinference.span.kind" not in attrs:
+        method = str(getattr(span, "name", "") or "").rpartition(".")[2]
+        if method in _LLAMA_INDEX_LLM_METHODS:
+            return True
+    return False
+
+
+def _langchain_llm_run_traced() -> bool:
+    """OpenInference's LangChain tracer records chat model runs from callbacks and never makes its span
+    current, so the span check above cannot see it. Look at the LangChain run this call runs under:
+    the call is theirs when that tracer has an open LLM run there. A raw client call inside a tool
+    has no such run, so it is still ours."""
+    import sys
+    module = sys.modules.get("langchain_core.runnables.config")
+    var = getattr(module, "var_child_runnable_config", None) if module is not None else None
+    config = var.get() if var is not None else None
+    if not config:
+        return False
+    callbacks = config.get("callbacks")
+    parent = getattr(callbacks, "parent_run_id", None)
+    if parent is None:
+        return False
+    parent = str(parent)
+    handlers = list(getattr(callbacks, "handlers", None) or []) + list(
+        getattr(callbacks, "inheritable_handlers", None) or [])
+    for handler in handlers:
+        if not (type(handler).__module__ or "").startswith("openinference."):
+            continue
+        run_map = getattr(handler, "run_map", None)
+        if not hasattr(run_map, "values"):
+            continue
+        for run in list(run_map.values()):
+            if getattr(run, "run_type", None) != "llm" or getattr(run, "end_time", None) is not None:
+                continue
+            if parent in (str(getattr(run, "parent_run_id", None)), str(getattr(run, "id", None))):
+                return True
     return False
 
 
