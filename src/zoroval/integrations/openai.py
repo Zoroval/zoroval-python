@@ -116,7 +116,7 @@ def chat_input_messages(messages: Any) -> list[dict]:
             _annotate(parts, get(msg, "annotations"))
             reasoning = _compat_reasoning(msg) if role == "assistant" else None
             if reasoning:
-                parts.insert(0, {"type": "reasoning", "content": reasoning})
+                out.append({"role": "assistant", "parts": [{"type": "reasoning", "content": reasoning}]})
             for call in get(msg, "tool_calls") or []:
                 fn = get(call, "function")
                 parts.append({"type": "tool_call", "id": get(call, "id"), "name": get(fn, "name"),
@@ -150,7 +150,9 @@ def _details_text(details: Any) -> str:
 
 def _compat_reasoning(message: Any) -> Optional[str]:
     """Reasoning text from OpenAI-compatible providers: DeepSeek `reasoning_content`, OpenRouter
-    `reasoning` (and `reasoning_details`, which repeats it in blocks). Read once."""
+    `reasoning` (and `reasoning_details`, which repeats it in blocks). Read once. It is recorded as an
+    assistant message of its own before the reply: DeepSeek refuses it in history, so the reply the app
+    sends back is text only and must still match the reply recorded here."""
     for key in ("reasoning_content", "reasoning"):
         value = get(message, key)
         if isinstance(value, str) and value:
@@ -202,7 +204,7 @@ def _chat_finish(gen: Generation, result: Any) -> None:
         _annotate(parts, get(message, "annotations"))
         reasoning = _compat_reasoning(message)
         if reasoning:
-            parts.insert(0, {"type": "reasoning", "content": reasoning})
+            outputs.append({"role": "assistant", "parts": [{"type": "reasoning", "content": reasoning}]})
         if get(message, "refusal"):
             parts.append({"type": "refusal", "content": get(message, "refusal")})
         parts += [{"type": "tool_call", **c} for c in choice_calls]
@@ -273,7 +275,7 @@ class _ChatStreamState:
             reasoning = "".join(slot["reasoning"]) or "\n".join("".join(slot["details"][i])
                                                                 for i in sorted(slot["details"]))
             if reasoning:
-                parts.insert(0, {"type": "reasoning", "content": reasoning})
+                outputs.append({"role": "assistant", "parts": [{"type": "reasoning", "content": reasoning}]})
             if slot["refusal"]:
                 parts.append({"type": "refusal", "content": "".join(slot["refusal"])})
             parts += [{"type": "tool_call", **c} for c in choice_calls]
@@ -302,7 +304,10 @@ def _builtin_call(kind: Any, item: Any) -> Optional[dict]:
     if raw is not None and not isinstance(raw, str):
         raw = _json.to_plain(raw)
         if kind == "web_search_call" and isinstance(raw, dict):
-            raw.pop("sources", None)  # the sources are the result, not the query
+            if raw.get("type") in (None, "search") and raw.get("query") is not None:
+                raw = {k: raw[k] for k in ("query", "queries") if raw.get(k) is not None}
+            else:  # open_page, find: the action, without the sources (they are the result)
+                raw.pop("sources", None)
     if raw is None:
         args = "{}"
     elif isinstance(raw, str):
@@ -324,7 +329,7 @@ def _builtin_result(kind: str, item: Any, call_id: Any) -> Optional[dict]:
     elif kind == "mcp_call":
         result, error = get(item, "output"), get(item, "error")
     elif kind == "image_generation_call":
-        result = media_part("image") if get(item, "result") else None  # base64 image: never sent
+        result = "[image omitted]" if get(item, "result") else None  # base64 image: never sent
     else:
         result = None
     if result is None and not error:
@@ -340,11 +345,11 @@ def _builtin_messages(kind: Any, item: Any) -> Optional[list[dict]]:
     call = _builtin_call(kind, item)
     if call is None:
         return None
-    out = [{"role": "assistant", "parts": [call]}]
+    parts = [call]
     result = _builtin_result(kind, item, call["id"])
     if result is not None:
-        out.append({"role": "tool", "parts": [result]})
-    return out
+        parts.append(result)  # OpenAI returns the result on the call item: one message, as in history
+    return [{"role": "assistant", "parts": parts}]
 
 
 def _reasoning_summary(item: Any) -> str:
@@ -406,10 +411,10 @@ def _responses_output(response: Any) -> tuple[list[dict], list[dict]]:
             if summary:
                 messages.append({"role": "assistant", "parts": [{"type": "reasoning", "content": summary}]})
         elif _builtin_messages(kind, item):
-            pair = _builtin_messages(kind, item) or []
-            call = pair[0]["parts"][0]
+            message = (_builtin_messages(kind, item) or [])[0]
+            call = message["parts"][0]
             calls.append({"id": call["id"], "name": call["name"], "arguments": call["arguments"]})
-            messages += pair
+            messages.append(message)
         elif kind:
             messages.append({"role": "assistant", "parts": [{"type": str(kind)}]})
     return messages, calls
@@ -456,7 +461,9 @@ def _responses_finish(gen: Generation, response: Any, error: Optional[BaseExcept
     messages, calls = _responses_output(response)
     status = get(response, "status")
     reason = get(get(response, "incomplete_details"), "reason") or status
-    outputs = [dict(m, finish_reason=reason) for m in messages]
+    outputs = list(messages)
+    if outputs and reason:
+        outputs[-1] = dict(outputs[-1], finish_reason=reason)
     if not outputs and reason:
         outputs = [{"role": "assistant", "parts": [], "finish_reason": reason}]
     if status == "failed" and error is None:
@@ -508,8 +515,8 @@ class _ResponsesStreamState:
         if self.error is not None and error is None and self.gen.span is not None:
             from opentelemetry.trace import Status, StatusCode
             self.gen.span.set_status(Status(StatusCode.ERROR, str(get(self.error, "message") or "stream error")))
-        outputs = [dict(m, finish_reason="incomplete") for m in messages] or [
-            {"role": "assistant", "parts": [], "finish_reason": "incomplete"}]
+        outputs = list(messages) or [{"role": "assistant", "parts": []}]
+        outputs[-1] = dict(outputs[-1], finish_reason="incomplete")
         self.gen.finish(response_id=self.id, model=self.model, finish_reasons=["incomplete"],
                         output_messages=outputs, tool_calls=calls, error=error)
 

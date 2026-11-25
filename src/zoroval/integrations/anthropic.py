@@ -32,6 +32,10 @@ _originals: dict[tuple[type, str], Any] = {}
 _CALL_BLOCKS = ("tool_use", "server_tool_use", "mcp_tool_use")
 
 
+def _is_call_block(kind: Any) -> bool:
+    return isinstance(kind, str) and (kind in _CALL_BLOCKS or kind.endswith("_tool_use"))
+
+
 def _tool_result_text(inner: Any) -> Any:
     """tool_result content: a string, or blocks. Text blocks are joined into one string."""
     if isinstance(inner, str) or inner is None:
@@ -47,7 +51,8 @@ def _server_result(block: Any) -> dict:
     response = _tool_result_text(inner) if get(block, "type") == "mcp_tool_result" else \
         strip_inline_media(_json.to_plain(inner))
     part = {"type": "tool_call_response", "id": get(block, "tool_use_id"), "response": response}
-    if get(block, "is_error") or (not isinstance(inner, (list, str)) and get(inner, "error_code")):
+    error_type = get(inner, "type") if not isinstance(inner, (list, str)) else None
+    if get(block, "is_error") or (isinstance(error_type, str) and error_type.endswith("_error")):
         part["is_error"] = True
     return part
 
@@ -62,7 +67,7 @@ def _blocks(content: Any) -> list[dict]:
         kind = get(block, "type")
         if kind == "text":
             parts.append(text_part(get(block, "text"), "citations", get(block, "citations")))
-        elif kind in _CALL_BLOCKS:
+        elif _is_call_block(kind):
             parts.append({"type": "tool_call", "id": get(block, "id"), "name": get(block, "name"),
                           "arguments": _json.dumps(_json.to_plain(get(block, "input")))})
         elif kind == "tool_result":
@@ -92,7 +97,7 @@ def input_messages(messages: Any) -> list[dict]:
 def _tool_calls(content: Any) -> list[dict]:
     calls = []
     for block in content or []:
-        if get(block, "type") in _CALL_BLOCKS:
+        if get(block, "type") == "tool_use":  # server and MCP tools run outside the app: no tool span to link
             calls.append({"id": get(block, "id"), "name": get(block, "name"),
                           "arguments": _json.dumps(_json.to_plain(get(block, "input")))})
     return calls
@@ -214,7 +219,7 @@ class _StreamState:
         for index in sorted(self.blocks):
             slot = self.blocks[index]
             kind = slot.get("type")
-            if kind in _CALL_BLOCKS:
+            if _is_call_block(kind):
                 raw = slot.get("json") or ""
                 try:
                     tool_input = json.loads(raw) if raw else (slot.get("input") or {})

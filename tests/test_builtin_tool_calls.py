@@ -16,7 +16,7 @@ def test_builtin_tool_calls_in_output():
     messages, calls = _responses_output(response)
     parts = [m["parts"][0] for m in messages]
     assert parts[:3] == [
-        {"type": "tool_call", "id": "ws_1", "name": "web_search", "arguments": '{"type":"search","query":"Lord\'s stadium events"}'},
+        {"type": "tool_call", "id": "ws_1", "name": "web_search", "arguments": '{"query":"Lord\'s stadium events"}'},
         {"type": "tool_call", "id": "fs_1", "name": "file_search", "arguments": '["ticket policy"]'},
         {"type": "tool_call", "id": "mcp_1", "name": "lookup", "arguments": '{"q":"x"}'},
     ]
@@ -28,7 +28,7 @@ def test_builtin_tool_call_in_input_history():
                {"type": "web_search_call", "id": "ws_0", "status": "completed", "action": {"type": "search", "query": "earlier"}}]
     out = responses_input_messages(history)
     assert out[1] == {"role": "assistant", "parts": [
-        {"type": "tool_call", "id": "ws_0", "name": "web_search", "arguments": json.dumps({"type": "search", "query": "earlier"}, separators=(",", ":"))}]}
+        {"type": "tool_call", "id": "ws_0", "name": "web_search", "arguments": json.dumps({"query": "earlier"}, separators=(",", ":"))}]}
 
 
 def test_unknown_items_still_show_their_type():

@@ -433,7 +433,7 @@ def text_part(text: Any, notes_key: str = "", notes: Any = None) -> dict:
     return part
 
 
-_OPAQUE_KEYS = ("encrypted_content", "encrypted_index")
+_OPAQUE_KEYS = ("encrypted_content", "encrypted_index", "encrypted_stdout")
 
 
 def strip_inline_media(value: Any) -> Any:

@@ -50,7 +50,7 @@ def test_server_tools_not_streamed():
     dumped = json.dumps(parts)
     assert "encrypted" not in dumped and "JVBERi0" not in dumped and "[base64 omitted]" in dumped
     assert parts[5]["citations"] == [{k: v for k, v in CITE.items() if k != "encrypted_index"}]
-    assert [c["name"] for c in out["tool_calls"]] == ["web_search", "web_fetch"]
+    assert out["tool_calls"] == []  # server tools run at Anthropic: no client tool span to link
 
 
 def test_history_matches_output():
@@ -84,7 +84,6 @@ def test_server_tools_streamed():
                         "arguments": '{"query":"dress code"}'}
     assert parts[1]["type"] == "tool_call_response" and parts[1]["id"] == "srvtoolu_3"
     assert parts[2]["content"] == "Smart attire." and parts[2]["citations"][0]["cited_text"] == "Closed on Tuesdays."
-    assert gen.kwargs["tool_calls"][0]["name"] == "web_search"
     assert gen.kwargs["usage"]["input_tokens"] == 1000
 
 

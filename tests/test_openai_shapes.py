@@ -33,9 +33,10 @@ class Gen:
 
 def test_one_message_per_output_item():
     messages, calls = _responses_output({"output": OUTPUT})
-    assert [m["role"] for m in messages] == ["assistant", "assistant", "tool", "assistant", "assistant"]
+    assert [m["role"] for m in messages] == ["assistant"] * 4
     assert messages[0]["parts"] == [{"type": "reasoning", "content": "Search first."}]
-    assert messages[3]["parts"] == [{"type": "tool_call", "id": "call_1", "name": "save", "arguments": "{}"}]
+    assert [p["type"] for p in messages[1]["parts"]] == ["tool_call", "tool_call_response"]
+    assert messages[2]["parts"] == [{"type": "tool_call", "id": "call_1", "name": "save", "arguments": "{}"}]
     assert [c["name"] for c in calls] == ["web_search", "save"]
 
 
@@ -49,17 +50,17 @@ def test_output_matches_input_history():
 
 def test_web_search_result_and_query_only_arguments():
     messages, calls = _responses_output({"output": OUTPUT[1:2]})
-    call, result = messages[0]["parts"][0], messages[1]["parts"][0]
-    assert json.loads(call["arguments"]) == {"type": "search", "query": "webb news"}
+    call, result = messages[0]["parts"]
+    assert json.loads(call["arguments"]) == {"query": "webb news"}
     assert result == {"type": "tool_call_response", "id": "ws_1", "response": WEB_SOURCES}
-    assert json.loads(calls[0]["arguments"]) == {"type": "search", "query": "webb news"}
+    assert json.loads(calls[0]["arguments"]) == {"query": "webb news"}
 
 
 def test_open_page_action_keeps_its_url():
     item = {"type": "web_search_call", "id": "ws_2", "action": {"type": "open_page", "url": "https://x.test"}}
     messages, _ = _responses_output({"output": [item]})
     assert json.loads(messages[0]["parts"][0]["arguments"]) == {"type": "open_page", "url": "https://x.test"}
-    assert len(messages) == 1  # no sources: no result message
+    assert len(messages[0]["parts"]) == 1  # no sources: no result part
 
 
 def test_file_search_code_and_mcp_results():
@@ -73,11 +74,11 @@ def test_file_search_code_and_mcp_results():
         {"type": "image_generation_call", "id": "ig_1", "result": "iVBORw0KGgo" * 50},
     ]
     messages, _ = _responses_output({"output": output})
-    results = [m["parts"][0] for m in messages if m["role"] == "tool"]
+    results = [m["parts"][1] for m in messages]
     assert results[0]["response"][0]["text"] == "Three days."
     assert results[1]["response"] == [{"type": "logs", "logs": "1\n"}, {"type": "image", "url": "[media omitted]"}]
     assert results[2] == {"type": "tool_call_response", "id": "mcp_1", "response": "server down", "is_error": True}
-    assert results[3]["response"]["content"] == "[image omitted]"
+    assert results[3]["response"] == "[image omitted]"
     assert "iVBOR" not in json.dumps(messages)
 
 
@@ -115,11 +116,15 @@ def test_deepseek_reasoning_content():
         "role": "assistant", "content": "Peak is 8 to 10.", "reasoning_content": "Western line peaks early."}}]}
     gen = Gen()
     _chat_finish(gen, result)
-    assert gen.kwargs["output_messages"][0]["parts"] == [
-        {"type": "reasoning", "content": "Western line peaks early."}, {"type": "text", "content": "Peak is 8 to 10."}]
-    back = chat_input_messages([{"role": "assistant", "content": "Peak is 8 to 10.",
-                                 "reasoning_content": "Western line peaks early."}])
-    assert back[0]["parts"] == gen.kwargs["output_messages"][0]["parts"]
+    reasoning, reply = gen.kwargs["output_messages"]
+    assert reasoning == {"role": "assistant", "parts": [{"type": "reasoning", "content": "Western line peaks early."}]}
+    assert reply["parts"] == [{"type": "text", "content": "Peak is 8 to 10."}] and reply["finish_reason"] == "stop"
+    # DeepSeek refuses reasoning_content in history: the app re-sends the reply alone, which still matches
+    back = chat_input_messages([{"role": "assistant", "content": "Peak is 8 to 10."}])
+    assert back[0]["parts"] == reply["parts"]
+    with_it = chat_input_messages([{"role": "assistant", "content": "Peak is 8 to 10.",
+                                    "reasoning_content": "Western line peaks early."}])
+    assert [m["parts"] for m in with_it] == [reasoning["parts"], reply["parts"]]
 
 
 def test_openrouter_reasoning_read_once():
@@ -127,8 +132,9 @@ def test_openrouter_reasoning_read_once():
                "reasoning_details": [{"type": "reasoning.text", "text": "Simple question.", "index": 0}]}
     gen = Gen()
     _chat_finish(gen, {"choices": [{"finish_reason": "stop", "message": message}]})
-    parts = gen.kwargs["output_messages"][0]["parts"]
-    assert [p["type"] for p in parts] == ["reasoning", "text"] and parts[0]["content"] == "Simple question."
+    messages = gen.kwargs["output_messages"]
+    assert [m["parts"][0]["type"] for m in messages] == ["reasoning", "text"]
+    assert messages[0]["parts"] == [{"type": "reasoning", "content": "Simple question."}]
     only_details = dict(message, reasoning=None)
     gen = Gen()
     _chat_finish(gen, {"choices": [{"finish_reason": "stop", "message": only_details}]})
@@ -151,8 +157,8 @@ def test_stream_reasoning_deltas():
         {"id": "c", "choices": [{"index": 0, "delta": {"content": "Take the 7:10."}}]},
         {"id": "c", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]},
     ])
-    assert out["output_messages"][0]["parts"] == [{"type": "reasoning", "content": "Fast trains."},
-                                                  {"type": "text", "content": "Take the 7:10."}]
+    assert [m["parts"] for m in out["output_messages"]] == [[{"type": "reasoning", "content": "Fast trains."}],
+                                                            [{"type": "text", "content": "Take the 7:10."}]]
     out = _stream([  # OpenRouter sends the same text in reasoning and reasoning_details
         {"choices": [{"index": 0, "delta": {"reasoning": "Short ", "reasoning_details": [
             {"type": "reasoning.text", "text": "Short ", "index": 0}]}}]},
