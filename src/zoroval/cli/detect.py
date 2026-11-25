@@ -311,6 +311,9 @@ def scan(root: Path) -> dict[str, Any]:
                 imports[top].append(rel)
             if module.startswith(("langfuse.openai", "langfuse.decorators")) or module == "langfuse.openai":
                 imports.setdefault("langfuse.openai" if "openai" in module else module, []).append(rel)
+            for sub in ("google.genai", "google.generativeai"):
+                if (module == sub or module.startswith(sub + ".")) and rel not in imports.setdefault(sub, []):
+                    imports[sub].append(rel)
         for line, call in visitor.calls:
             provider, api = call.split(":", 1)
             report["llm_calls"].append({"file": rel, "line": line, "provider": provider, "api": api})
@@ -415,6 +418,22 @@ def scan(root: Path) -> dict[str, Any]:
     return report
 
 
+# Frameworks whose OpenAI or Anthropic calls go through the official clients, so zoroval.init() records them.
+FRAMEWORK_OPENAI = ("langchain-openai", "llama-index-llms-openai", "llama-index-llms-azure-openai",
+                    "llama-index-llms-openai-like", "openai-agents", "pydantic-ai", "pydantic-ai-slim")
+FRAMEWORK_ANTHROPIC = ("langchain-anthropic", "llama-index-llms-anthropic", "pydantic-ai", "pydantic-ai-slim")
+FRAMEWORK_IMPORTS = {"langchain_openai": "openai", "langchain_anthropic": "anthropic", "pydantic_ai": "both"}
+# OpenLLMetry (Traceloop) instrumentors for LLM providers and frameworks.
+OPENLLMETRY = ("openai", "anthropic", "langchain", "llamaindex", "bedrock", "cohere", "mistralai", "groq", "ollama",
+               "vertexai", "google-generativeai", "together", "replicate", "watsonx", "sagemaker", "alephalpha",
+               "transformers", "crewai", "haystack", "openai-agents", "writer", "mcp", "agno")
+# Providers zoroval.init() does not record on its own, with the instrumentor to add after it.
+GEMINI_PACKAGES = ("google-genai", "google-generativeai")
+GEMINI_INSTRUMENTOR = ("openinference-instrumentation-google-genai",
+                       "from openinference.instrumentation.google_genai import GoogleGenAIInstrumentor",
+                       "GoogleGenAIInstrumentor().instrument()")
+
+
 def _has(packages: dict[str, str], *names: str) -> bool:
     return any(_norm(n) in packages for n in names)
 
@@ -428,8 +447,18 @@ def _classify(report: dict[str, Any], py: dict[str, str], js: dict[str, str], im
 
     uses_openai = _has(py, "openai") or "openai" in imports
     uses_anthropic = _has(py, "anthropic") or "anthropic" in imports
+    frameworks = sorted({p for p in FRAMEWORK_OPENAI + FRAMEWORK_ANTHROPIC if _has(py, p)}
+                        | {m for m in FRAMEWORK_IMPORTS if m in imports})
+    if frameworks:
+        uses_openai = uses_openai or any(_has(py, p) for p in FRAMEWORK_OPENAI) or any(
+            FRAMEWORK_IMPORTS[m] in ("openai", "both") for m in frameworks if m in FRAMEWORK_IMPORTS)
+        uses_anthropic = uses_anthropic or any(_has(py, p) for p in FRAMEWORK_ANTHROPIC) or any(
+            FRAMEWORK_IMPORTS[m] in ("anthropic", "both") for m in frameworks if m in FRAMEWORK_IMPORTS)
+        tracing["frameworks"] = frameworks
     tracing["openai"] = uses_openai
     tracing["anthropic"] = uses_anthropic
+    uses_gemini = any(_has(py, p) for p in GEMINI_PACKAGES) or "google.genai" in imports or \
+        "google.generativeai" in imports
 
     langfuse_spec = py.get("langfuse")
     if langfuse_spec is not None or "langfuse" in imports:
@@ -451,10 +480,8 @@ def _classify(report: dict[str, Any], py: dict[str, str], js: dict[str, str], im
         else:
             explain.append("2b")
     contrib = [p for p in py if p.startswith("opentelemetry-instrumentation-") and p.endswith("-v2")]
-    openllmetry = [p for p in py if p == "traceloop-sdk" or (p.startswith("opentelemetry-instrumentation-") and
-                                                           not p.endswith("-v2") and any(
-                                                               x in p for x in ("openai", "anthropic", "langchain",
-                                                                                "llamaindex", "bedrock")))]
+    openllmetry = [p for p in py if p == "traceloop-sdk" or (
+        p.startswith("opentelemetry-instrumentation-") and p[len("opentelemetry-instrumentation-"):] in OPENLLMETRY)]
     openinference = [p for p in py if p.startswith("openinference-")]
     if _has(py, "opentelemetry-sdk") or signals & {"otel_provider", "otel_set_provider"} or \
             report["collector_configs"] or any(n.startswith("OTEL_EXPORTER_OTLP") for n in
@@ -477,18 +504,27 @@ def _classify(report: dict[str, Any], py: dict[str, str], js: dict[str, str], im
         cases.append(7)
     if len(report["services"]) > 1:
         explain.append(8)
-    if (uses_openai or uses_anthropic) and not any(c in cases for c in (2, 3, 4)) and "2b" not in explain:
+    if uses_gemini:
+        gemini_traced = any(p.startswith(("openinference-instrumentation-google-genai",
+                                          "opentelemetry-instrumentation-google-genai",
+                                          "opentelemetry-instrumentation-google-generativeai")) for p in py)
+        tracing["gemini"] = {"instrumented": gemini_traced}
+    if (uses_openai or uses_anthropic or uses_gemini) and not any(c in cases for c in (2, 3, 4)) \
+            and "2b" not in explain:
         cases.append(1)
     cases.append(9)
     report["cases"] = [c for c in [1, 2, 3, 4, 6, 7, 9] if c in cases]
     report["explain_only"] = [c for c in ["2b", 5, 8] if c in explain]
-    if not (uses_openai or uses_anthropic) and 6 not in cases and 4 not in cases:
+    if frameworks:
+        notes.append(f"Frameworks found ({', '.join(frameworks)}): zoroval.init() records their OpenAI and "
+                     "Anthropic calls. Do not add an OpenInference or OpenLLMetry instrumentor for them as well.")
+    if not (uses_openai or uses_anthropic or uses_gemini) and 6 not in cases and 4 not in cases:
         notes.append("No OpenAI or Anthropic client found. Other providers need OTel GenAI instrumentation.")
     if report["chat_id_candidates"]:
         names = sorted({c["name"] for c in report["chat_id_candidates"]})
         if len(names) > 1:
             notes.append(f"Several possible conversation ids ({', '.join(names)}): ask the user which one.")
-    elif uses_openai or uses_anthropic:
+    elif uses_openai or uses_anthropic or uses_gemini:
         notes.append("No conversation id found. Ask whether this is a chat app and where its chat id lives.")
     report["plan"] = _plan(report)
 
@@ -506,6 +542,11 @@ def _plan(report: dict[str, Any]) -> list[str]:
         plan.append(f"Add `import zoroval` and `zoroval.init()` at the top of {entry or 'the app entry'}.")
     if 4 in cases:
         plan.append("Keep their instrumentor; do not add a second OpenAI wrapper (zoroval detects theirs).")
+    gemini = report["tracing"].get("gemini")
+    if gemini and not gemini.get("instrumented"):
+        package, import_line, call = GEMINI_INSTRUMENTOR
+        plan.append(f"Gemini (google-genai): zoroval.init() does not record it on its own. Add `{package}` to the "
+                    f"dependencies, and right after `zoroval.init()` add `{import_line}` and `{call}`.")
     if report["chat_id_candidates"] and 2 not in cases:
         first = report["chat_id_candidates"][0]
         plan.append(f"Wrap each chat turn in `with zoroval.conversation({first['name']}):` "
