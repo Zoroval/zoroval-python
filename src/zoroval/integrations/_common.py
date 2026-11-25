@@ -43,8 +43,18 @@ def get(obj: Any, key: str, default: Any = None) -> Any:
     return value if given(value) else default
 
 
+# OpenInference's LlamaIndex handler names a span after the LLM method and sets its kind only at the end.
+_LLAMA_INDEX_LLM_METHODS = {"chat", "achat", "stream_chat", "astream_chat", "complete", "acomplete",
+                            "stream_complete", "astream_complete"}
+
+
 def foreign_llm_span_active() -> bool:
-    """True when the current span is an open LLM-call span from another instrumentation."""
+    """True when another instrumentation is already recording this LLM call."""
+    try:
+        if _langchain_llm_run_traced():
+            return True
+    except Exception as error:  # noqa: BLE001
+        internal_error("foreign.langchain", error)
     span = otel_trace.get_current_span()
     if not span.is_recording() or getattr(span, "end_time", None) is not None:
         return False
@@ -61,6 +71,61 @@ def foreign_llm_span_active() -> bool:
         return True
     if attrs.get("gen_ai.operation.name") in ("chat", "text_completion", "generate_content"):
         return True
+    if scope_name.startswith("openinference.instrumentation.llama_index") and \
+            "openinference.span.kind" not in attrs:
+        owner, _, method = str(getattr(span, "name", "") or "").rpartition(".")
+        if method in _LLAMA_INDEX_LLM_METHODS and _llama_index_llm_class(owner):
+            return True
+    return False
+
+
+def _llama_index_llm_class(name: str) -> bool:
+    """Is `name` a LlamaIndex LLM class? Chat engines and agents also have chat() and stream_chat()."""
+    import sys
+    module = sys.modules.get("llama_index.core.base.llms.base")
+    base = getattr(module, "BaseLLM", None) if module is not None else None
+    if base is None:
+        return False
+    seen: set = set()
+    todo = [base]
+    while todo:
+        cls = todo.pop()
+        for sub in cls.__subclasses__():
+            if sub not in seen:
+                seen.add(sub)
+                todo.append(sub)
+    return any(cls.__name__ == name for cls in seen)
+
+
+def _langchain_llm_run_traced() -> bool:
+    """OpenInference's LangChain tracer records chat model runs from callbacks and never makes its span
+    current, so the span check above cannot see it. Look at the LangChain run this call runs under:
+    the call is theirs when that tracer has an open LLM run there. A raw client call inside a tool
+    has no such run, so it is still ours."""
+    import sys
+    module = sys.modules.get("langchain_core.runnables.config")
+    var = getattr(module, "var_child_runnable_config", None) if module is not None else None
+    config = var.get() if var is not None else None
+    if not config:
+        return False
+    callbacks = config.get("callbacks")
+    parent = getattr(callbacks, "parent_run_id", None)
+    if parent is None:
+        return False
+    parent = str(parent)
+    handlers = list(getattr(callbacks, "handlers", None) or []) + list(
+        getattr(callbacks, "inheritable_handlers", None) or [])
+    for handler in handlers:
+        if not (type(handler).__module__ or "").startswith("openinference."):
+            continue
+        run_map = getattr(handler, "run_map", None)
+        if not hasattr(run_map, "values"):
+            continue
+        for run in list(run_map.values()):
+            if getattr(run, "run_type", None) != "llm" or getattr(run, "end_time", None) is not None:
+                continue
+            if parent in (str(getattr(run, "parent_run_id", None)), str(getattr(run, "id", None))):
+                return True
     return False
 
 
@@ -358,8 +423,157 @@ class AsyncStream(_ProxyBase):
             pass
 
 
-def text_part(text: Any) -> dict:
-    return {"type": "text", "content": text}
+def text_part(text: Any, notes_key: str = "", notes: Any = None) -> dict:
+    """A text part. `notes` (OpenAI annotations, Anthropic citations) are kept under `notes_key`."""
+    part = {"type": "text", "content": text}
+    if notes_key and notes:
+        plain = strip_inline_media(_json.to_plain(list(notes)))
+        if plain:
+            part[notes_key] = plain
+    return part
+
+
+_OPAQUE_KEYS = ("encrypted_content", "encrypted_index", "encrypted_stdout")
+
+
+def strip_inline_media(value: Any) -> Any:
+    """Plain JSON with inline base64 (data: URLs, base64 sources) and opaque encrypted blobs replaced
+    by placeholders. Tool results from built-in tools can carry screenshots, images and PDFs."""
+    if isinstance(value, str):
+        return "[media omitted]" if value.startswith("data:") else value
+    if isinstance(value, list):
+        return [strip_inline_media(v) for v in value]
+    if isinstance(value, dict):
+        out = {}
+        for key, item in value.items():
+            if key in _OPAQUE_KEYS:
+                continue
+            if key == "data" and value.get("type") == "base64":
+                out[key] = "[base64 omitted]"
+                continue
+            out[key] = strip_inline_media(item)
+        return out
+    return value
+
+
+# Well-known gen_ai.provider.name values by API host, for OpenAI- or Anthropic-compatible base URLs.
+_PROVIDER_HOSTS = (
+    ("api.openai.com", "openai"),
+    ("openai.azure.com", "azure.ai.openai"),
+    ("services.ai.azure.com", "azure.ai.inference"),
+    ("models.inference.ai.azure.com", "azure.ai.inference"),
+    ("api.anthropic.com", "anthropic"),
+    ("api.groq.com", "groq"),
+    ("api.deepseek.com", "deepseek"),
+    ("openrouter.ai", "openrouter"),
+    ("api.mistral.ai", "mistral_ai"),
+    ("api.x.ai", "x_ai"),
+    ("api.perplexity.ai", "perplexity"),
+    ("generativelanguage.googleapis.com", "gcp.gemini"),
+    ("aiplatform.googleapis.com", "gcp.vertex_ai"),
+    ("api.together.xyz", "together_ai"),
+    ("api.together.ai", "together_ai"),
+    ("api.fireworks.ai", "fireworks"),
+    ("api.cerebras.ai", "cerebras"),
+    ("api.cohere.ai", "cohere"),
+    ("api.cohere.com", "cohere"),
+    ("dashscope.aliyuncs.com", "alibaba"),
+    ("dashscope-intl.aliyuncs.com", "alibaba"),
+    ("api.moonshot.ai", "moonshot"),
+)
+
+
+def provider_from_host(host: Any, default: str) -> str:
+    """The provider a client's base URL points at. Unknown hosts (localhost, proxies) keep `default`."""
+    if not isinstance(host, str) or not host:
+        return default
+    host = host.lower().rstrip(".")
+    if host.startswith("bedrock") and host.endswith((".amazonaws.com", ".api.aws")):
+        return "aws.bedrock"  # bedrock-runtime.<region>.amazonaws.com, bedrock-mantle.<region>.api.aws
+    for suffix, name in _PROVIDER_HOSTS:
+        if host == suffix or host.endswith("." + suffix):
+            return name
+    return default
+
+
+def client_host(resource: Any) -> Optional[str]:
+    base_url = getattr(getattr(resource, "_client", None), "base_url", None)
+    host = getattr(base_url, "host", None)
+    return str(host) if host else None
+
+
+_STREAM_CLASSES = ("Stream", "AsyncStream")
+
+
+def _is_sdk_stream(value: Any) -> bool:
+    cls = type(value)
+    return cls.__name__ in _STREAM_CLASSES and (cls.__module__ or "").startswith(("openai", "anthropic"))
+
+
+def hook_raw_response(response: Any, gen: Generation, state_factory: Callable[[Generation], Any],
+                      is_async: bool, finish_final: Callable[[Generation, Any], None]) -> bool:
+    """`with_raw_response` / `with_streaming_response` return the HTTP response; the app calls `parse()`
+    to get the stream or the final object. A stream goes through our proxy; a final object finishes the
+    span. If the app reads the bytes itself, the span ends without output when the response is closed
+    or collected. Never raises into the app: the response only gets instance attributes."""
+    import inspect
+    import weakref
+
+    original_parse = getattr(response, "parse", None)
+    holder: dict[str, Any] = {}
+
+    def wrap(parsed: Any) -> Any:
+        if "parsed" in holder and holder["parsed"] is parsed:
+            return holder["proxy"]
+        if gen.done:
+            return parsed
+        holder["parsed"], holder["proxy"] = parsed, parsed
+        if _is_sdk_stream(parsed):
+            state = state_factory(gen)
+            holder["proxy"] = (AsyncStream if is_async else SyncStream)(parsed, gen, state.observe, state.finish)
+        else:
+            safe("raw_response.finish", finish_final, gen, parsed)
+            gen.finish()
+        return holder["proxy"]
+
+    if callable(original_parse):
+        if inspect.iscoroutinefunction(original_parse):
+            async def parse_async(*args: Any, **kwargs: Any) -> Any:
+                parsed = await original_parse(*args, **kwargs)
+                proxy = safe("raw_response.parse", wrap, parsed)
+                return parsed if proxy is None else proxy
+            response.parse = parse_async
+        else:
+            def parse_sync(*args: Any, **kwargs: Any) -> Any:
+                parsed = original_parse(*args, **kwargs)
+                proxy = safe("raw_response.parse", wrap, parsed)
+                return parsed if proxy is None else proxy
+            response.parse = parse_sync
+
+    def end_unparsed() -> None:
+        if "parsed" not in holder:
+            gen.finish()
+
+    for name in ("close", "aclose"):
+        original_close = getattr(response, name, None)
+        if not callable(original_close):
+            continue
+        if inspect.iscoroutinefunction(original_close):
+            async def close_async(*args: Any, _orig: Any = original_close, **kwargs: Any) -> Any:
+                try:
+                    return await _orig(*args, **kwargs)
+                finally:
+                    safe("raw_stream.close", end_unparsed)
+            setattr(response, name, close_async)
+        else:
+            def close_sync(*args: Any, _orig: Any = original_close, **kwargs: Any) -> Any:
+                try:
+                    return _orig(*args, **kwargs)
+                finally:
+                    safe("raw_stream.close", end_unparsed)
+            setattr(response, name, close_sync)
+    weakref.finalize(response, end_unparsed)
+    return True
 
 
 def media_part(kind: str, detail: Any = None) -> dict:
@@ -369,3 +583,11 @@ def media_part(kind: str, detail: Any = None) -> dict:
     if url and not url.startswith("data:"):
         part["uri"] = url
     return part
+
+
+def needs_parse_hook(result: Any, stream: Any) -> bool:
+    """A raw HTTP response whose reply we must take from the app's own parse() call: every streamed
+    one, and `with_streaming_response` (its parse() reads the body, or is async)."""
+    if not hasattr(result, "http_response") or not hasattr(result, "parse"):
+        return False
+    return bool(stream) or type(result).__name__ != "LegacyAPIResponse"

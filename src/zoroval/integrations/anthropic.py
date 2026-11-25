@@ -13,8 +13,9 @@ from typing import Any, Optional
 
 from .. import _json
 from .._util import internal_error
-from ._common import (MARK, AsyncStream, Generation, SyncStream, foreign_wrapper, get, given, media_part,
-                      is_ours, safe, text_part, wrapped_over)
+from ._common import (MARK, AsyncStream, Generation, SyncStream, client_host, foreign_wrapper, get, given,
+                      hook_raw_response, is_ours, media_part, needs_parse_hook, provider_from_host, safe,
+                      strip_inline_media, text_part, wrapped_over)
 
 REQUEST_PARAMS = {
     "temperature": "gen_ai.request.temperature",
@@ -26,6 +27,36 @@ REQUEST_PARAMS = {
 _originals: dict[tuple[type, str], Any] = {}
 
 
+# Tool calls the model makes: the app's own tools, and server tools Anthropic runs (web search, web fetch,
+# code execution) or an MCP server runs.
+_CALL_BLOCKS = ("tool_use", "server_tool_use", "mcp_tool_use")
+
+
+def _is_call_block(kind: Any) -> bool:
+    return isinstance(kind, str) and (kind in _CALL_BLOCKS or kind.endswith("_tool_use"))
+
+
+def _tool_result_text(inner: Any) -> Any:
+    """tool_result content: a string, or blocks. Text blocks are joined into one string."""
+    if isinstance(inner, str) or inner is None:
+        return inner
+    pieces = [get(b, "text") if get(b, "type") == "text" else f"[{get(b, 'type')} omitted]" for b in inner]
+    return "\n".join(p for p in pieces if isinstance(p, str))
+
+
+def _server_result(block: Any) -> dict:
+    """web_search_tool_result, web_fetch_tool_result, code_execution_tool_result, mcp_tool_result, ...:
+    the result of a server tool call, with the call's id. Base64 and encrypted blobs are left out."""
+    inner = get(block, "content")
+    response = _tool_result_text(inner) if get(block, "type") == "mcp_tool_result" else \
+        strip_inline_media(_json.to_plain(inner))
+    part = {"type": "tool_call_response", "id": get(block, "tool_use_id"), "response": response}
+    error_type = get(inner, "type") if not isinstance(inner, (list, str)) else None
+    if get(block, "is_error") or (isinstance(error_type, str) and error_type.endswith("_error")):
+        part["is_error"] = True
+    return part
+
+
 def _blocks(content: Any) -> list[dict]:
     if content is None or not given(content):
         return []
@@ -35,18 +66,18 @@ def _blocks(content: Any) -> list[dict]:
     for block in content:
         kind = get(block, "type")
         if kind == "text":
-            parts.append(text_part(get(block, "text")))
-        elif kind == "tool_use" or kind == "server_tool_use":
+            parts.append(text_part(get(block, "text"), "citations", get(block, "citations")))
+        elif _is_call_block(kind):
             parts.append({"type": "tool_call", "id": get(block, "id"), "name": get(block, "name"),
                           "arguments": _json.dumps(_json.to_plain(get(block, "input")))})
         elif kind == "tool_result":
-            inner = get(block, "content")
-            response = inner if isinstance(inner, str) else [
-                get(b, "text") if get(b, "type") == "text" else f"[{get(b, 'type')} omitted]" for b in inner or []]
-            part = {"type": "tool_call_response", "id": get(block, "tool_use_id"), "response": response}
+            part = {"type": "tool_call_response", "id": get(block, "tool_use_id"),
+                    "response": _tool_result_text(get(block, "content"))}
             if get(block, "is_error"):
                 part["is_error"] = True
             parts.append(part)
+        elif isinstance(kind, str) and kind.endswith("_tool_result"):
+            parts.append(_server_result(block))
         elif kind == "thinking":
             parts.append({"type": "reasoning", "content": get(block, "thinking")})
         elif kind in ("image", "document"):
@@ -66,21 +97,37 @@ def input_messages(messages: Any) -> list[dict]:
 def _tool_calls(content: Any) -> list[dict]:
     calls = []
     for block in content or []:
-        if get(block, "type") == "tool_use":
+        if get(block, "type") == "tool_use":  # server and MCP tools run outside the app: no tool span to link
             calls.append({"id": get(block, "id"), "name": get(block, "name"),
                           "arguments": _json.dumps(_json.to_plain(get(block, "input")))})
     return calls
 
 
 def _usage(usage: Any) -> dict[str, Any]:
+    """input_tokens is the whole prompt (GenAI semconv): Anthropic's input_tokens counts only the part
+    after the last cache breakpoint, so cache reads and writes are added. They are also kept apart."""
     if usage is None:
         return {}
-    out = {"input_tokens": get(usage, "input_tokens"), "output_tokens": get(usage, "output_tokens")}
-    if get(usage, "cache_read_input_tokens"):
-        out["cache_read.input_tokens"] = get(usage, "cache_read_input_tokens")
-    if get(usage, "cache_creation_input_tokens"):
-        out["cache_creation.input_tokens"] = get(usage, "cache_creation_input_tokens")
+    cache_read = get(usage, "cache_read_input_tokens")
+    cache_write = get(usage, "cache_creation_input_tokens")
+    total = get(usage, "input_tokens")
+    if isinstance(total, int):
+        total += sum(v for v in (cache_read, cache_write) if isinstance(v, int) and not isinstance(v, bool))
+    out = {"input_tokens": total, "output_tokens": get(usage, "output_tokens")}
+    if cache_read:
+        out["cache_read.input_tokens"] = cache_read
+    if cache_write:
+        out["cache_creation.input_tokens"] = cache_write
     return out
+
+
+def _provider_name(resource: Any) -> str:
+    client = type(getattr(resource, "_client", None)).__name__
+    if "Bedrock" in client:
+        return "aws.bedrock"
+    if "Vertex" in client:
+        return "gcp.vertex_ai"
+    return provider_from_host(client_host(resource), "anthropic")
 
 
 def _start(resource: Any, kwargs: dict, stream: Optional[bool] = None) -> Generation:
@@ -96,7 +143,7 @@ def _start(resource: Any, kwargs: dict, stream: Optional[bool] = None) -> Genera
             attrs[name] = value
     if get(kwargs, "stop_sequences"):
         attrs["gen_ai.request.stop_sequences"] = [str(s) for s in get(kwargs, "stop_sequences")]
-    gen = Generation(provider="anthropic", model=get(kwargs, "model"), request_attributes=attrs)
+    gen = Generation(provider=_provider_name(resource), model=get(kwargs, "model"), request_attributes=attrs)
     if gen.active:
         system = get(kwargs, "system")
         if system:
@@ -141,7 +188,7 @@ class _StreamState:
             self.blocks[get(event, "index", 0) or 0] = {
                 "type": get(block, "type"), "text": get(block, "text") or "", "id": get(block, "id"),
                 "name": get(block, "name"), "json": "", "thinking": get(block, "thinking") or "",
-                "input": get(block, "input")}
+                "input": get(block, "input"), "citations": list(get(block, "citations") or []), "block": block}
         elif kind == "content_block_delta":
             slot = self.blocks.setdefault(get(event, "index", 0) or 0, {"type": "text", "text": "", "json": "",
                                                                         "thinking": ""})
@@ -153,6 +200,8 @@ class _StreamState:
                 slot["json"] += get(delta, "partial_json") or ""
             elif dtype == "thinking_delta":
                 slot["thinking"] += get(delta, "thinking") or ""
+            elif dtype == "citations_delta" and get(delta, "citation") is not None:
+                slot.setdefault("citations", []).append(get(delta, "citation"))
         elif kind == "message_delta":
             delta = get(event, "delta")
             if get(delta, "stop_reason"):
@@ -170,18 +219,20 @@ class _StreamState:
         for index in sorted(self.blocks):
             slot = self.blocks[index]
             kind = slot.get("type")
-            if kind == "tool_use":
+            if _is_call_block(kind):
                 raw = slot.get("json") or ""
                 try:
                     tool_input = json.loads(raw) if raw else (slot.get("input") or {})
                 except ValueError:
                     tool_input = raw
-                content.append({"type": "tool_use", "id": slot.get("id"), "name": slot.get("name"),
+                content.append({"type": kind, "id": slot.get("id"), "name": slot.get("name"),
                                 "input": tool_input})
             elif kind == "thinking":
                 content.append({"type": "thinking", "thinking": slot.get("thinking")})
             elif kind == "text":
-                content.append({"type": "text", "text": slot.get("text")})
+                content.append({"type": "text", "text": slot.get("text"), "citations": slot.get("citations")})
+            elif isinstance(kind, str) and kind.endswith("_tool_result") and slot.get("block") is not None:
+                content.append(slot["block"])  # server tool results arrive whole in content_block_start
             else:
                 content.append({"type": kind})
         _finish(self.gen, {"id": self.id, "model": self.model, "content": content,
@@ -208,10 +259,12 @@ def _wrap_create(original: Any, is_async: bool, owner: type, method: str) -> Any
                 raise
             gen.detach()
             try:
-                if get(kwargs, "stream", False) and not hasattr(result, "content"):
-                    if hasattr(result, "http_response"):
+                if needs_parse_hook(result, get(kwargs, "stream", False)):
+                    if not safe("anthropic.raw_response", hook_raw_response, result, gen, _StreamState,
+                                True, _finish):
                         gen.finish()
-                        return result
+                    return result
+                if get(kwargs, "stream", False) and not hasattr(result, "content"):
                     state = _StreamState(gen)
                     return AsyncStream(result, gen, state.observe, state.finish)
                 _finish(gen, result)
@@ -238,10 +291,12 @@ def _wrap_create(original: Any, is_async: bool, owner: type, method: str) -> Any
             raise
         gen.detach()
         try:
-            if get(kwargs, "stream", False) and not hasattr(result, "content"):
-                if hasattr(result, "http_response"):
+            if needs_parse_hook(result, get(kwargs, "stream", False)):
+                if not safe("anthropic.raw_response", hook_raw_response, result, gen, _StreamState,
+                            False, _finish):
                     gen.finish()
-                    return result
+                return result
+            if get(kwargs, "stream", False) and not hasattr(result, "content"):
                 state = _StreamState(gen)
                 return SyncStream(result, gen, state.observe, state.finish)
             _finish(gen, result)
