@@ -77,9 +77,78 @@ def _remove_set_provider_hook() -> None:
     _original_set_provider = None
 
 
+_log_hook_installed = False
+_original_set_logger_provider: Optional[Callable[..., Any]] = None
+_own_logger_provider: Any = None
+
+
+def _own_logs_provider(cfg: _config.Config) -> Any:
+    """No SDK LoggerProvider is global: make one and set it, so instrumentors that put content in log
+    events (OTel contrib botocore, google-genai) have somewhere to emit. None if someone else won."""
+    global _own_logger_provider
+    from opentelemetry._logs import get_logger_provider, set_logger_provider
+    from opentelemetry.sdk._logs import LoggerProvider
+    from opentelemetry.sdk.resources import Resource
+    attrs = {"service.name": cfg.service_name}
+    if cfg.environment:
+        attrs["deployment.environment.name"] = cfg.environment
+    provider = LoggerProvider(resource=Resource.create(attrs))
+    set_logger_provider(provider)
+    if get_logger_provider() is not provider:
+        current = get_logger_provider()
+        return current if isinstance(current, LoggerProvider) else None
+    _own_logger_provider = provider
+    _install_set_logger_provider_hook()
+    return provider
+
+
+def _install_set_logger_provider_hook() -> None:
+    """OpenTelemetry sets the global LoggerProvider once. An app that sets its own after zoroval.init()
+    would be refused and its log exporters would get nothing, so their processors move onto ours."""
+    global _log_hook_installed, _original_set_logger_provider
+    if _log_hook_installed:
+        return
+    try:
+        import opentelemetry._logs._internal as logs_module
+        from opentelemetry.sdk._logs import LoggerProvider
+        original = logs_module._set_logger_provider
+    except (ImportError, AttributeError):
+        return
+
+    def _set_logger_provider(logger_provider: Any, log: bool) -> None:
+        current = getattr(logs_module, "_LOGGER_PROVIDER", None)
+        if (_own_logger_provider is not None and current is _own_logger_provider
+                and logger_provider is not current and isinstance(logger_provider, LoggerProvider)):
+            try:
+                current.add_log_record_processor(logger_provider._multi_log_record_processor)
+                logger.info("zoroval: an app LoggerProvider was set after zoroval.init(); its log processors "
+                            "were attached to the global provider so both receive log records.")
+                return
+            except Exception as error:  # noqa: BLE001
+                internal_error("bridge_logger_provider", error)
+        original(logger_provider, log)
+
+    logs_module._set_logger_provider = _set_logger_provider
+    _original_set_logger_provider = original
+    _log_hook_installed = True
+
+
+def _remove_set_logger_provider_hook() -> None:
+    global _log_hook_installed, _original_set_logger_provider
+    if not _log_hook_installed or _original_set_logger_provider is None:
+        return
+    try:
+        import opentelemetry._logs._internal as logs_module
+        logs_module._set_logger_provider = _original_set_logger_provider
+    except ImportError:
+        pass
+    _log_hook_installed = False
+    _original_set_logger_provider = None
+
+
 def _attach_logs(cfg: _config.Config, transport: Transport) -> Any:
-    """The OTel contrib instrumentors put message content in GenAI log events. If the app has an SDK
-    LoggerProvider, export those events (and only those) to /v1/logs."""
+    """The OTel contrib instrumentors put message content in GenAI log events. Export those events
+    (and only those) to /v1/logs, through the app's SDK LoggerProvider or one we create."""
     try:
         from opentelemetry._logs import get_logger_provider
         from opentelemetry.sdk._logs import LoggerProvider
@@ -93,7 +162,11 @@ def _attach_logs(cfg: _config.Config, transport: Transport) -> Any:
         from opentelemetry.sdk._logs.export import LogExporter, LogExportResult  # type: ignore[no-redef]
     provider = get_logger_provider()
     if not isinstance(provider, LoggerProvider):
-        return None
+        provider = _own_logs_provider(cfg)
+        if provider is None:
+            return None
+    elif provider is _own_logger_provider:
+        _install_set_logger_provider_hook()  # init() again after shutdown()
 
     import time
 
@@ -297,6 +370,7 @@ def shutdown(timeout: Optional[float] = None) -> dict[str, Any]:
         anthropic_module.uninstrument()
         if state.owns_provider:
             _remove_set_provider_hook()
+        _remove_set_logger_provider_hook()
     except Exception as error:  # noqa: BLE001
         internal_error("shutdown", error)
     result = status()
