@@ -311,13 +311,15 @@ def _init(*, instrument: Any, tracer_provider: Any, **kwargs: Any) -> bool:
 def _instrument(state: _state.State, instrument: Any) -> None:
     if instrument is False or instrument is None:
         return
-    names = ("openai", "anthropic") if instrument is True else tuple(instrument)
+    names = ("openai", "anthropic", "litellm") if instrument is True else tuple(instrument)
     for name in names:
         try:
             if name == "openai":
                 from .integrations import openai as module
             elif name == "anthropic":
                 from .integrations import anthropic as module  # type: ignore[no-redef]
+            elif name == "litellm":
+                from .integrations import litellm as module  # type: ignore[no-redef]
             else:
                 log_once(f"unknown-integration:{name}", "zoroval: unknown integration %r ignored.", name)
                 continue
@@ -366,8 +368,10 @@ def shutdown(timeout: Optional[float] = None) -> dict[str, Any]:
                 internal_error("log_shutdown", error)
         from .integrations import anthropic as anthropic_module
         from .integrations import openai as openai_module
+        from .integrations import litellm as litellm_module
         openai_module.uninstrument()
         anthropic_module.uninstrument()
+        litellm_module.uninstrument()
         if state.owns_provider:
             _remove_set_provider_hook()
         _remove_set_logger_provider_hook()
