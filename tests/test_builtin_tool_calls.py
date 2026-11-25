@@ -13,7 +13,8 @@ def test_builtin_tool_calls_in_output():
         {"type": "mcp_call", "id": "mcp_1", "name": "lookup", "arguments": '{"q":"x"}', "server_label": "s"},
         {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Check with the organiser."}]},
     ]}
-    parts, calls = _responses_output(response)
+    messages, calls = _responses_output(response)
+    parts = [m["parts"][0] for m in messages]
     assert parts[:3] == [
         {"type": "tool_call", "id": "ws_1", "name": "web_search", "arguments": '{"type":"search","query":"Lord\'s stadium events"}'},
         {"type": "tool_call", "id": "fs_1", "name": "file_search", "arguments": '["ticket policy"]'},
@@ -31,5 +32,5 @@ def test_builtin_tool_call_in_input_history():
 
 
 def test_unknown_items_still_show_their_type():
-    parts, calls = _responses_output({"output": [{"type": "something_new"}]})
-    assert parts == [{"type": "something_new"}] and calls == []
+    messages, calls = _responses_output({"output": [{"type": "something_new"}]})
+    assert messages == [{"role": "assistant", "parts": [{"type": "something_new"}]}] and calls == []

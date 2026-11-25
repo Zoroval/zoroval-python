@@ -358,8 +358,156 @@ class AsyncStream(_ProxyBase):
             pass
 
 
-def text_part(text: Any) -> dict:
-    return {"type": "text", "content": text}
+def text_part(text: Any, notes_key: str = "", notes: Any = None) -> dict:
+    """A text part. `notes` (OpenAI annotations, Anthropic citations) are kept under `notes_key`."""
+    part = {"type": "text", "content": text}
+    if notes_key and notes:
+        plain = strip_inline_media(_json.to_plain(list(notes)))
+        if plain:
+            part[notes_key] = plain
+    return part
+
+
+_OPAQUE_KEYS = ("encrypted_content", "encrypted_index")
+
+
+def strip_inline_media(value: Any) -> Any:
+    """Plain JSON with inline base64 (data: URLs, base64 sources) and opaque encrypted blobs replaced
+    by placeholders. Tool results from built-in tools can carry screenshots, images and PDFs."""
+    if isinstance(value, str):
+        return "[media omitted]" if value.startswith("data:") else value
+    if isinstance(value, list):
+        return [strip_inline_media(v) for v in value]
+    if isinstance(value, dict):
+        out = {}
+        for key, item in value.items():
+            if key in _OPAQUE_KEYS:
+                continue
+            if key == "data" and value.get("type") == "base64":
+                out[key] = "[base64 omitted]"
+                continue
+            out[key] = strip_inline_media(item)
+        return out
+    return value
+
+
+# Well-known gen_ai.provider.name values by API host, for OpenAI- or Anthropic-compatible base URLs.
+_PROVIDER_HOSTS = (
+    ("api.openai.com", "openai"),
+    ("openai.azure.com", "azure.ai.openai"),
+    ("services.ai.azure.com", "azure.ai.inference"),
+    ("models.inference.ai.azure.com", "azure.ai.inference"),
+    ("api.anthropic.com", "anthropic"),
+    ("api.groq.com", "groq"),
+    ("api.deepseek.com", "deepseek"),
+    ("openrouter.ai", "openrouter"),
+    ("api.mistral.ai", "mistral_ai"),
+    ("api.x.ai", "x_ai"),
+    ("api.perplexity.ai", "perplexity"),
+    ("generativelanguage.googleapis.com", "gcp.gemini"),
+    ("aiplatform.googleapis.com", "gcp.vertex_ai"),
+    ("amazonaws.com", "aws.bedrock"),
+    ("api.together.xyz", "together_ai"),
+    ("api.together.ai", "together_ai"),
+    ("api.fireworks.ai", "fireworks"),
+    ("api.cerebras.ai", "cerebras"),
+    ("api.cohere.ai", "cohere"),
+    ("api.cohere.com", "cohere"),
+    ("dashscope.aliyuncs.com", "alibaba"),
+    ("dashscope-intl.aliyuncs.com", "alibaba"),
+    ("api.moonshot.ai", "moonshot"),
+)
+
+
+def provider_from_host(host: Any, default: str) -> str:
+    """The provider a client's base URL points at. Unknown hosts (localhost, proxies) keep `default`."""
+    if not isinstance(host, str) or not host:
+        return default
+    host = host.lower().rstrip(".")
+    for suffix, name in _PROVIDER_HOSTS:
+        if host == suffix or host.endswith("." + suffix):
+            return name
+    return default
+
+
+def client_host(resource: Any) -> Optional[str]:
+    base_url = getattr(getattr(resource, "_client", None), "base_url", None)
+    host = getattr(base_url, "host", None)
+    return str(host) if host else None
+
+
+_STREAM_CLASSES = ("Stream", "AsyncStream")
+
+
+def _is_sdk_stream(value: Any) -> bool:
+    cls = type(value)
+    return cls.__name__ in _STREAM_CLASSES and (cls.__module__ or "").startswith(("openai", "anthropic"))
+
+
+def hook_raw_response(response: Any, gen: Generation, state_factory: Callable[[Generation], Any],
+                      is_async: bool, finish_final: Callable[[Generation, Any], None]) -> bool:
+    """`with_raw_response` / `with_streaming_response` return the HTTP response; the app calls `parse()`
+    to get the stream or the final object. A stream goes through our proxy; a final object finishes the
+    span. If the app reads the bytes itself, the span ends without output when the response is closed
+    or collected. Never raises into the app: the response only gets instance attributes."""
+    import inspect
+    import weakref
+
+    original_parse = getattr(response, "parse", None)
+    holder: dict[str, Any] = {}
+
+    def wrap(parsed: Any) -> Any:
+        if "parsed" in holder and holder["parsed"] is parsed:
+            return holder["proxy"]
+        if gen.done:
+            return parsed
+        holder["parsed"], holder["proxy"] = parsed, parsed
+        if _is_sdk_stream(parsed):
+            state = state_factory(gen)
+            holder["proxy"] = (AsyncStream if is_async else SyncStream)(parsed, gen, state.observe, state.finish)
+        else:
+            safe("raw_response.finish", finish_final, gen, parsed)
+            gen.finish()
+        return holder["proxy"]
+
+    if callable(original_parse):
+        if inspect.iscoroutinefunction(original_parse):
+            async def parse_async(*args: Any, **kwargs: Any) -> Any:
+                parsed = await original_parse(*args, **kwargs)
+                proxy = safe("raw_response.parse", wrap, parsed)
+                return parsed if proxy is None else proxy
+            response.parse = parse_async
+        else:
+            def parse_sync(*args: Any, **kwargs: Any) -> Any:
+                parsed = original_parse(*args, **kwargs)
+                proxy = safe("raw_response.parse", wrap, parsed)
+                return parsed if proxy is None else proxy
+            response.parse = parse_sync
+
+    def end_unparsed() -> None:
+        if "parsed" not in holder:
+            gen.finish()
+
+    for name in ("close", "aclose"):
+        original_close = getattr(response, name, None)
+        if not callable(original_close):
+            continue
+        if inspect.iscoroutinefunction(original_close):
+            async def close_async(*args: Any, _orig: Any = original_close, **kwargs: Any) -> Any:
+                try:
+                    return await _orig(*args, **kwargs)
+                finally:
+                    safe("raw_stream.close", end_unparsed)
+            setattr(response, name, close_async)
+        else:
+            def close_sync(*args: Any, _orig: Any = original_close, **kwargs: Any) -> Any:
+                try:
+                    return _orig(*args, **kwargs)
+                finally:
+                    safe("raw_stream.close", end_unparsed)
+            setattr(response, name, close_sync)
+    weakref.finalize(response, end_unparsed)
+    return True
 
 
 def media_part(kind: str, detail: Any = None) -> dict:
@@ -369,3 +517,11 @@ def media_part(kind: str, detail: Any = None) -> dict:
     if url and not url.startswith("data:"):
         part["uri"] = url
     return part
+
+
+def needs_parse_hook(result: Any, stream: Any) -> bool:
+    """A raw HTTP response whose reply we must take from the app's own parse() call: every streamed
+    one, and `with_streaming_response` (its parse() reads the body, or is async)."""
+    if not hasattr(result, "http_response") or not hasattr(result, "parse"):
+        return False
+    return bool(stream) or type(result).__name__ != "LegacyAPIResponse"
